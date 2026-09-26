@@ -195,7 +195,8 @@ select {
 .sw-earlier { width: 10px; height: 10px; border: 2px solid var(--series-forecast); border-radius: 50%; }
 .sw-usual { border-color: var(--series-usual); border-top-width: 2px; }
 .chartbox { position: relative; height: 330px; }
-.mapbox { position: relative; height: 700px; background: var(--map-water); border-radius: 8px; overflow: hidden; }
+.mapbox { position: relative; height: 700px; background: var(--map-water); border-radius: 8px; overflow: hidden;
+  isolation: isolate; z-index: 0; }   /* keep Leaflet's z-indexes (400–1000) under the sticky header and drawers */
 .map-msg { display: grid; place-items: center; height: 100%; color: var(--muted); }
 .mapbox.leaflet-container { font: inherit; background: var(--map-water); }
 .map-panel { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 10px;
