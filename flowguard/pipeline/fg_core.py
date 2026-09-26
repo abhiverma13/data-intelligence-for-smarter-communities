@@ -1,8 +1,11 @@
 """FlowGuard analytics core: every formula from spec §5.2, in plain pandas/numpy.
 
 Imported by the Databricks notebooks (04–07) *and* by local scripts, so both compute
-identical numbers. Spark only does the heavy lifting (aggregating ~5.4M visits to slots);
-everything here works on small slot-level frames (≈15k slots).
+identical numbers. Spark only does the heavy lifting (aggregating millions of visits to slots);
+everything here works on small slot-level frames (≈15k slots per point of interest).
+
+Every function works on ONE point of interest (POI) at a time; `poi` is its entry from
+app/server/pois.json (via fg_settings.POI_BY_KEY). Outputs carry a `poi` column.
 
 Conventions: timestamps are naive pandas datetimes in Vancouver local time; the slot grid
 has no gaps; `dow` is 0=Mon … 6=Sun; `sod` is slot-of-day 0..47.
@@ -44,6 +47,19 @@ def _typical(values: np.ndarray, dow: np.ndarray, sod: np.ndarray, mask: np.ndar
     return med.reindex(pd.MultiIndex.from_arrays([dow, sod])).to_numpy(dtype=float)
 
 
+def _baseline(values: np.ndarray, grid: pd.DatetimeIndex, weeks: int | None) -> np.ndarray:
+    """"Normal" for each slot: median for the same weekday × slot — over the whole history, or, if `weeks`
+    is set (seasonal POIs such as UBC term vs summer), over the surrounding ±`weeks` weeks only."""
+    dow, sod = np.asarray(grid.dayofweek), slot_of_day(grid)
+    if not weeks:
+        return _typical(values, dow, sod)
+    week = np.asarray((grid.normalize() - grid.normalize()[0]).days // 7)
+    key = dow * S.SLOTS_PER_DAY + sod
+    m = pd.DataFrame({"w": week, "k": key, "v": values}).pivot_table(index="w", columns="k", values="v", aggfunc="first", dropna=False)
+    med = m.rolling(2 * weeks + 1, center=True, min_periods=weeks + 1).median()
+    return med.to_numpy(dtype=float)[med.index.get_indexer(week), med.columns.get_indexer(key)]
+
+
 def _floor(baseline: np.ndarray, share: float) -> np.ndarray:
     return np.maximum(baseline, share * np.nanmax(baseline))
 
@@ -59,17 +75,20 @@ def service_day_types(dates: pd.DatetimeIndex, ref_day: pd.DataFrame) -> tuple[n
 
 
 # ---------------------------------------------------------------- 04: slots, baselines, pressure, signature, days
-def build_slots(slot_agg: pd.DataFrame, corr_agg: pd.DataFrame, ref_day: pd.DataFrame):
+def build_slots(slot_agg: pd.DataFrame, corr_agg: pd.DataFrame, ref_day: pd.DataFrame, poi: dict):
     """
-    slot_agg: index slot_ts (full grid) · arrivals, departures, arrivals_occ, departures_occ, median_dwell
-    corr_agg: long frame slot_ts, corridor, arrivals, departures (full grid × CORRIDORS)
-    Returns (pr_slots, pr_slot_corridor, pr_days).
+    slot_agg: index slot_ts · arrivals, departures, arrivals_occ, departures_occ, median_dwell
+    corr_agg: long frame slot_ts, corridor, arrivals, departures
+    Returns (slots, slot_corridor, days), each with a `poi` column.
     """
+    corridors = S.corridors(poi)
+    weeks = poi.get("baseline_weeks")
     grid = make_grid()
     a = slot_agg.reindex(grid).fillna({"arrivals": 0, "departures": 0, "arrivals_occ": 0, "departures_occ": 0})
     dow = np.asarray(grid.dayofweek)
     sod = slot_of_day(grid)
     out = pd.DataFrame(index=grid)
+    out["poi"] = poi["key"]
     out["slot_ts"] = grid
     out["date"] = grid.normalize()
     out["day_type"] = np.array(S.DAY_TYPES)[dow]
@@ -84,48 +103,49 @@ def build_slots(slot_agg: pd.DataFrame, corr_agg: pd.DataFrame, ref_day: pd.Data
     out["occupancy"] = (np.cumsum(arr_o) - np.cumsum(dep_o)).astype(int)
 
     # 2. pressure = occupancy / median occupancy for the same weekday × slot
-    base_occ = _typical(out["occupancy"].to_numpy(float), dow, sod)
+    base_occ = _baseline(out["occupancy"].to_numpy(float), grid, weeks)
     out["baseline_occ"] = base_occ
     out["pressure"] = out["occupancy"] / _floor(base_occ, S.BASELINE_OCC_FLOOR_SHARE)
     out["pressure_level"] = [level(p, S.PRESSURE_LEVELS) for p in out["pressure"]]
-    out["baseline_arrivals"] = _typical(out["arrivals"].to_numpy(float), dow, sod)
-    out["baseline_departures"] = _typical(out["departures"].to_numpy(float), dow, sod)
+    out["baseline_arrivals"] = _baseline(out["arrivals"].to_numpy(float), grid, weeks)
+    out["baseline_departures"] = _baseline(out["departures"].to_numpy(float), grid, weeks)
     out["median_dwell"] = a["median_dwell"].to_numpy(float)
 
-    # corridor frame
+    # corridor frame + trailing-2 h arrival shares (the catchment)
     ca = corr_agg.pivot_table(index="slot_ts", columns="corridor", values="arrivals", aggfunc="sum")
-    ca = ca.reindex(index=grid, columns=S.CORRIDORS).fillna(0)
+    ca = ca.reindex(index=grid, columns=corridors).fillna(0)
     cd = corr_agg.pivot_table(index="slot_ts", columns="corridor", values="departures", aggfunc="sum")
-    cd = cd.reindex(index=grid, columns=S.CORRIDORS).fillna(0)
+    cd = cd.reindex(index=grid, columns=corridors).fillna(0)
+    trail = ca.rolling(S.TRAILING_SLOTS, min_periods=1).sum()
+    shares = trail.div(trail.sum(axis=1).replace(0, np.nan), axis=0)
     corr_rows = []
-    for c in S.CORRIDORS:
+    for c in corridors:
         dep_c = cd[c].to_numpy(float)
+        share_c = shares[c].to_numpy(float)
         corr_rows.append(pd.DataFrame({
-            "slot_ts": grid, "corridor": c,
+            "poi": poi["key"], "slot_ts": grid, "corridor": c,
             "arrivals": ca[c].astype(int).to_numpy(), "departures": dep_c.astype(int),
-            "baseline_departures": _typical(dep_c, dow, sod),
+            "baseline_departures": _baseline(dep_c, grid, weeks),
+            "share": share_c, "baseline_share": _baseline(share_c, grid, weeks),
         }))
-    pr_slot_corridor = pd.concat(corr_rows, ignore_index=True)
+    slot_corridor = pd.concat(corr_rows, ignore_index=True)
 
     # 8. mobility signature on the trailing 2 h of arrivals
-    trail = ca.rolling(S.TRAILING_SLOTS, min_periods=1).sum()
-    tot = trail.sum(axis=1).replace(0, np.nan)
-    shares = trail.div(tot, axis=0)
-    for c in S.CORRIDORS:
-        out[f"share_{c.lower()}"] = shares[c].to_numpy()
-        out[f"baseline_share_{c.lower()}"] = _typical(shares[c].to_numpy(float), dow, sod)
-    regional = shares[S.REGIONAL_CORRIDORS].sum(axis=1).to_numpy()
+    local = shares[poi["local_corridors"]].sum(axis=1).to_numpy()
+    out["local_share"] = local
+    out["baseline_local_share"] = _baseline(local, grid, weeks)
+    regional = shares[poi["regional_corridors"]].sum(axis=1).to_numpy()
     out["regional_share"] = regional
-    out["baseline_regional_share"] = _typical(regional, dow, sod)
+    out["baseline_regional_share"] = _baseline(regional, grid, weeks)
     w = a["arrivals"].to_numpy(float)
     md = np.nan_to_num(out["median_dwell"].to_numpy(float))
     num = pd.Series(md * w).rolling(S.TRAILING_SLOTS, min_periods=1).sum().to_numpy()
     den = pd.Series(w).rolling(S.TRAILING_SLOTS, min_periods=1).sum().replace(0, np.nan).to_numpy()
     trailing_dwell = num / den
     out["trailing_dwell"] = trailing_dwell
-    out["stay_ratio"] = trailing_dwell / _typical(trailing_dwell, dow, sod)
+    out["stay_ratio"] = trailing_dwell / _baseline(trailing_dwell, grid, weeks)
     visitor = shares["OUT_OF_REGION"].to_numpy()
-    out["visitor_ratio"] = visitor / _typical(visitor, dow, sod)
+    out["visitor_ratio"] = visitor / _baseline(visitor, grid, weeks)
     out["signature"] = [
         signature(p, r, br, s, v)
         for p, r, br, s, v in zip(out["pressure"], regional, out["baseline_regional_share"], out["stay_ratio"], out["visitor_ratio"])
@@ -133,9 +153,15 @@ def build_slots(slot_agg: pd.DataFrame, corr_agg: pd.DataFrame, ref_day: pd.Data
 
     # 3. days: surge ratio vs median for that weekday
     days = out.groupby("date").agg(arrivals=("arrivals", "sum")).reset_index()
+    days.insert(0, "poi", poi["key"])
     days["day_type"] = np.array(S.DAY_TYPES)[days["date"].dt.dayofweek]
-    days["surge_ratio"] = days["arrivals"] / days.groupby("day_type")["arrivals"].transform("median")
-    days["is_surge"] = days["surge_ratio"] >= S.SURGE_RATIO_THRESHOLD
+    if weeks:   # seasonal: vs the same weekday in the surrounding ±weeks weeks
+        usual = days.groupby("day_type")["arrivals"].transform(
+            lambda x: x.rolling(2 * weeks + 1, center=True, min_periods=weeks + 1).median())
+    else:
+        usual = days.groupby("day_type")["arrivals"].transform("median")
+    days["surge_ratio"] = days["arrivals"] / usual
+    days["is_surge"] = days["surge_ratio"] >= poi.get("surge_threshold", S.SURGE_RATIO_THRESHOLD)
     days["service_day_type"], ref_label = service_day_types(pd.DatetimeIndex(days["date"]), ref_day)
     lo, hi = S.PEAK_WINDOW_SLOTS
     day_win = out[(out["slot_of_day"] >= lo) & (out["slot_of_day"] < hi)]
@@ -147,7 +173,7 @@ def build_slots(slot_agg: pd.DataFrame, corr_agg: pd.DataFrame, ref_day: pd.Data
         for lbl, surge in zip(ref_label, days["is_surge"])
     ]
 
-    return out.reset_index(drop=True), pr_slot_corridor, days
+    return out.reset_index(drop=True), slot_corridor, days
 
 
 def signature(pressure, regional, base_regional, stay_ratio, visitor_ratio) -> str:
@@ -166,13 +192,13 @@ def signature(pressure, regional, base_regional, stay_ratio, visitor_ratio) -> s
 
 
 # ---------------------------------------------------------------- 05: egress kernel, forecast, backtest
-def estimate_kernel(k_counts: pd.Series) -> pd.DataFrame:
+def estimate_kernel(k_counts: pd.Series, poi: dict) -> pd.DataFrame:
     """k_counts: number of training visits per egress_k (slots between arrival and departure slot).
     P(k) = share of visitors leaving k slots after their arrival slot; mass beyond K never returns."""
     total = k_counts.sum()
     k = np.arange(S.KERNEL_MAX_K + 1)
     p = k_counts.reindex(k, fill_value=0).to_numpy(float) / total
-    return pd.DataFrame({"k": k, "p": p, "cum_p": np.cumsum(p)})
+    return pd.DataFrame({"poi": poi["key"], "k": k, "p": p, "cum_p": np.cumsum(p)})
 
 
 def today_factor(arrivals: np.ndarray, typical_arrivals: np.ndarray) -> np.ndarray:
@@ -204,19 +230,19 @@ def egress_forecast(arrivals: np.ndarray, typical_arrivals: np.ndarray, p: np.nd
     return out
 
 
-def run_forecasts(pr_slots: pd.DataFrame, pr_slot_corridor: pd.DataFrame, kernel: pd.DataFrame):
+def run_forecasts(slots: pd.DataFrame, slot_corridor: pd.DataFrame, kernel: pd.DataFrame, poi: dict):
     """Returns (egress_forecast long frame, model_backtest frame) for corridor 'ALL' + each corridor."""
     p = kernel.sort_values("k")["p"].to_numpy()
-    pr_slots = pr_slots.sort_values("slot_ts").reset_index(drop=True)
-    grid = pd.DatetimeIndex(pr_slots["slot_ts"])
+    slots = slots.sort_values("slot_ts").reset_index(drop=True)
+    grid = pd.DatetimeIndex(slots["slot_ts"])
     dow = np.asarray(grid.dayofweek)
-    sod = pr_slots["slot_of_day"].to_numpy()
+    sod = slots["slot_of_day"].to_numpy()
     train = np.asarray(grid < pd.Timestamp(S.TRAIN_END))
     n = len(grid)
 
-    series = {"ALL": (pr_slots["arrivals"].to_numpy(float), pr_slots["departures"].to_numpy(float),
-                      pr_slots["baseline_departures"].to_numpy(float))}
-    for c, g in pr_slot_corridor.groupby("corridor"):
+    series = {"ALL": (slots["arrivals"].to_numpy(float), slots["departures"].to_numpy(float),
+                      slots["baseline_departures"].to_numpy(float))}
+    for c, g in slot_corridor.groupby("corridor"):
         g = g.set_index("slot_ts").reindex(grid)
         series[c] = (g["arrivals"].to_numpy(float), g["departures"].to_numpy(float), g["baseline_departures"].to_numpy(float))
 
@@ -228,43 +254,43 @@ def run_forecasts(pr_slots: pd.DataFrame, pr_slot_corridor: pd.DataFrame, kernel
             pred = egress_forecast(arr, typ_arr, p, h)    # aligned to target slot τ
             tgt = np.arange(h, n)                          # τ with a valid origin t = τ − h
             rows.append(pd.DataFrame({
-                "origin_slot_ts": grid[tgt - h], "horizon": h, "target_slot_ts": grid[tgt],
+                "poi": poi["key"], "origin_slot_ts": grid[tgt - h], "horizon": h, "target_slot_ts": grid[tgt],
                 "corridor": c, "dep_hat": pred[tgt], "dep_actual": dep[tgt].astype(int),
                 "egress_idx": pred[tgt] / base_dep_f[tgt],
             }))
             if c == "ALL":
                 m = ~train & ~np.isnan(pred)
                 m[:h] = False
-                backtest.append(_metrics(h, "egress", "departures", dep[m], pred[m]))
+                backtest.append(_metrics(poi, h, "egress", "departures", dep[m], pred[m]))
                 static = egress_forecast(arr, typ_arr, p, h, scaling=False)
-                backtest.append(_metrics(h, "egress_static", "departures", dep[m], static[m]))
+                backtest.append(_metrics(poi, h, "egress_static", "departures", dep[m], static[m]))
                 typ_dep = _typical(dep, dow, sod, train)
-                backtest.append(_metrics(h, "typical_week", "departures", dep[m], typ_dep[m]))
+                backtest.append(_metrics(poi, h, "typical_week", "departures", dep[m], typ_dep[m]))
     fc = pd.concat(rows, ignore_index=True).dropna(subset=["dep_hat"])
     return fc, pd.DataFrame(backtest)
 
 
-def _metrics(h, model, target, y, yhat) -> dict:
+def _metrics(poi, h, model, target, y, yhat) -> dict:
     y, yhat = np.asarray(y, float), np.asarray(yhat, float)
     ss_res = np.sum((y - yhat) ** 2)
     ss_tot = np.sum((y - y.mean()) ** 2)
-    return {"horizon": h, "model": model, "target": target, "r2": 1 - ss_res / ss_tot,
+    return {"poi": poi["key"], "horizon": h, "model": model, "target": target, "r2": 1 - ss_res / ss_tot,
             "mae": float(np.mean(np.abs(y - yhat))), "n": int(len(y))}
 
 
-def gbt_arrival_backtest(pr_slots: pd.DataFrame) -> pd.DataFrame:
+def gbt_arrival_backtest(slots: pd.DataFrame, poi: dict) -> pd.DataFrame:
     """Gradient-boosted arrival forecaster (lags + calendar) vs the typical-week pattern.
     Included for comparison with the egress model; arrivals are not a product feature."""
     from sklearn.ensemble import HistGradientBoostingRegressor
 
-    pr_slots = pr_slots.sort_values("slot_ts").reset_index(drop=True)
-    grid = pd.DatetimeIndex(pr_slots["slot_ts"])
-    arr = pr_slots["arrivals"].astype(float).reset_index(drop=True)
+    slots = slots.sort_values("slot_ts").reset_index(drop=True)
+    grid = pd.DatetimeIndex(slots["slot_ts"])
+    arr = slots["arrivals"].astype(float).reset_index(drop=True)
     train = pd.Series(grid < pd.Timestamp(S.TRAIN_END))
-    X = pd.DataFrame({"dow": grid.dayofweek, "sod": pr_slots["slot_of_day"].to_numpy()})
+    X = pd.DataFrame({"dow": grid.dayofweek, "sod": slots["slot_of_day"].to_numpy()})
     for lag in [0, 1, 2, 3, 47, 335]:          # lag 0 = arrivals in the current slot (known at t)
         X[f"lag{lag}"] = arr.shift(lag)
-    dow, sod = np.asarray(grid.dayofweek), pr_slots["slot_of_day"].to_numpy()
+    dow, sod = np.asarray(grid.dayofweek), slots["slot_of_day"].to_numpy()
     typ = _typical(arr.to_numpy(), dow, sod, train.to_numpy())
     rows = []
     for h in [1, 2]:
@@ -272,47 +298,56 @@ def gbt_arrival_backtest(pr_slots: pd.DataFrame) -> pd.DataFrame:
         ok = X.notna().all(axis=1) & y.notna()
         model = HistGradientBoostingRegressor(max_iter=300, random_state=0).fit(X[ok & train], y[ok & train])
         te = ok & ~train
-        rows.append(_metrics(h, "gbt_arrivals", "arrivals", y[te], model.predict(X[te])))
-        rows.append(_metrics(h, "typical_week", "arrivals", y[te], np.roll(typ, -h)[te.to_numpy()]))
+        rows.append(_metrics(poi, h, "gbt_arrivals", "arrivals", y[te], model.predict(X[te])))
+        rows.append(_metrics(poi, h, "typical_week", "arrivals", y[te], np.roll(typ, -h)[te.to_numpy()]))
     return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------- 06: GTFS route groups + scheduled service
-def haversine_m(lat, lon, lat0=S.POI_LAT, lon0=S.POI_LON):
+def haversine_m(lat, lon, lat0, lon0):
     lat, lon = np.radians(np.asarray(lat, float)), np.radians(np.asarray(lon, float))
     lat0, lon0 = np.radians(lat0), np.radians(lon0)
     a = np.sin((lat - lat0) / 2) ** 2 + np.cos(lat0) * np.cos(lat) * np.sin((lon - lon0) / 2) ** 2
     return 2 * 6371000 * np.arcsin(np.sqrt(a))
 
 
-def parkroyal_departures(stops, stop_times, trips, routes, overrides: dict):
-    """One row per scheduled trip that *leaves* Park Royal: its first stop within GTFS_STOP_RADIUS_M,
-    excluding trips that end near the mall (those arrive rather than depart). Returns (departures, near_stops)."""
-    stops = stops.assign(dist_m=haversine_m(stops["stop_lat"], stops["stop_lon"]))
-    near_stops = stops[stops["dist_m"] <= S.GTFS_STOP_RADIUS_M].sort_values("dist_m")
+def last_stops(stop_times: pd.DataFrame) -> pd.DataFrame:
+    """Final stop of every trip (computed once, shared by all POIs)."""
     st = stop_times.assign(seq=stop_times["stop_sequence"].astype(int))
-    last = st.loc[st.groupby("trip_id")["seq"].idxmax(), ["trip_id", "stop_id", "seq"]]
-    last = last.merge(stops[["stop_id", "dist_m"]], on="stop_id")
-    ends_here = set(last.loc[last["dist_m"] <= S.GTFS_TERMINATING_RADIUS_M, "trip_id"])
-    at_pr = st[st["stop_id"].isin(set(near_stops["stop_id"])) & ~st["trip_id"].isin(ends_here)]
-    first = at_pr.sort_values("seq").groupby("trip_id").head(1)
+    return st.loc[st.groupby("trip_id")["seq"].idxmax(), ["trip_id", "stop_id"]]
+
+
+def poi_departures(stops, stop_times, trips, routes, last, overrides: dict, poi: dict):
+    """One row per scheduled trip that *leaves* the POI: its first stop within stop_radius_m,
+    excluding trips that end within terminating_radius_m (those arrive rather than depart).
+    Returns (departures, near_stops)."""
+    stops = stops.assign(dist_m=haversine_m(stops["stop_lat"], stops["stop_lon"], poi["lat"], poi["lon"]))
+    near_stops = stops[stops["dist_m"] <= poi["stop_radius_m"]].sort_values("dist_m")
+    ends = last.merge(stops[["stop_id", "dist_m"]], on="stop_id")
+    ends_here = set(ends.loc[ends["dist_m"] <= poi["terminating_radius_m"], "trip_id"])
+    at = stop_times[stop_times["stop_id"].isin(set(near_stops["stop_id"])) & ~stop_times["trip_id"].isin(ends_here)]
+    first = at.assign(seq=at["stop_sequence"].astype(int)).sort_values("seq").groupby("trip_id").head(1)
+    routes = routes.assign(route_name=routes["route_short_name"].fillna(routes["route_long_name"]))
     dep = (first.merge(trips[["trip_id", "route_id", "service_id", "trip_headsign"]], on="trip_id")
-                .merge(routes[["route_id", "route_short_name", "route_long_name"]], on="route_id")
+                .merge(routes[["route_id", "route_name", "route_long_name", "route_type"]], on="route_id")
                 .merge(stops[["stop_id", "stop_name"]], on="stop_id"))
-    dep["route_group"] = [classify_headsign(h, overrides) for h in dep["trip_headsign"]]
-    cols = ["trip_id", "service_id", "route_id", "route_short_name", "route_long_name", "trip_headsign",
-            "route_group", "stop_id", "stop_name", "departure_time"]
-    return dep[cols].reset_index(drop=True), near_stops[["stop_id", "stop_code", "stop_name", "dist_m"]]
+    dep["route_group"] = [classify_headsign(h, overrides, poi) for h in dep["trip_headsign"]]
+    dep["capacity"] = dep["route_type"].astype(str).map(S.CAPACITY).fillna(1).astype(float)
+    dep.insert(0, "poi", poi["key"])
+    cols = ["poi", "trip_id", "service_id", "route_id", "route_name", "route_long_name", "route_type", "trip_headsign",
+            "route_group", "capacity", "stop_id", "stop_name", "departure_time"]
+    near = near_stops.assign(poi=poi["key"])[["poi", "stop_id", "stop_code", "stop_name", "dist_m"]]
+    return dep[cols].reset_index(drop=True), near
 
 
-def classify_headsign(headsign: str, overrides: dict) -> str:
+def classify_headsign(headsign: str, overrides: dict, poi: dict) -> str:
     if headsign in overrides:
         return overrides[headsign]
     h = (headsign or "").lower()
-    for kw, group in S.ROUTE_GROUP_RULES:
+    for kw, group in poi["route_group_rules"]:
         if kw in h:
             return group
-    return S.ROUTE_GROUP_DEFAULT
+    return poi["route_group_default"]
 
 
 def active_services(date: str, calendar: pd.DataFrame, calendar_dates: pd.DataFrame) -> set:
@@ -326,59 +361,56 @@ def active_services(date: str, calendar: pd.DataFrame, calendar_dates: pd.DataFr
     return s
 
 
-def service_30min(departures: pd.DataFrame, calendar: pd.DataFrame, calendar_dates: pd.DataFrame) -> pd.DataFrame:
-    """departures: one row per trip leaving Park Royal (service_id, departure_time 'HH:MM:SS', route_group).
-    Counts scheduled departures per service_day_type × slot_of_day × route_group (times ≥ 24:00 wrap)."""
+def service_30min(departures: pd.DataFrame, calendar: pd.DataFrame, calendar_dates: pd.DataFrame, poi: dict) -> pd.DataFrame:
+    """departures: one row per trip leaving the POI (service_id, departure_time 'HH:MM:SS', route_group, capacity).
+    Scheduled departures and capacity (bus-equivalents) per service_day_type × slot_of_day × route_group
+    (GTFS times ≥ 24:00 wrap)."""
+    groups = S.groups(poi)
     hh = departures["departure_time"].str.split(":", expand=True).astype(int)
     d = departures.assign(slot_of_day=(hh[0] * 2 + hh[1] // 30) % S.SLOTS_PER_DAY)
-    d = d[d["route_group"].isin(S.ROUTE_GROUPS)]
+    d = d[d["route_group"].isin(groups)]
+    full = pd.MultiIndex.from_product([range(S.SLOTS_PER_DAY), groups], names=["slot_of_day", "route_group"])
     rows = []
     for sdt, date in S.SERVICE_REP_DATES.items():
         on = d[d["service_id"].isin(active_services(date, calendar, calendar_dates))]
-        counts = on.groupby(["slot_of_day", "route_group"]).size()
-        full = pd.MultiIndex.from_product([range(S.SLOTS_PER_DAY), S.ROUTE_GROUPS], names=["slot_of_day", "route_group"])
-        rows.append(counts.reindex(full, fill_value=0).rename("scheduled_departures").reset_index().assign(service_day_type=sdt))
+        agg = on.groupby(["slot_of_day", "route_group"]).agg(scheduled_departures=("trip_id", "size"),
+                                                             scheduled_capacity=("capacity", "sum"))
+        rows.append(agg.reindex(full, fill_value=0).reset_index().assign(service_day_type=sdt, poi=poi["key"]))
     out = pd.concat(rows, ignore_index=True)
-    return out[["service_day_type", "slot_of_day", "route_group", "scheduled_departures"]]
+    return out[["poi", "service_day_type", "slot_of_day", "route_group", "scheduled_departures", "scheduled_capacity"]]
 
 
 # ---------------------------------------------------------------- 07: transit pressure gap, readiness, actions
-LEVERS = {
-    "EASTBOUND": ("Stage supplemental eastbound (R2-direction) trips at Park Royal exchange from {start}; "
-                  "position passenger-management staff at the eastbound bays; message riders to consider a later departure."),
-    "DOWNTOWN": ("Add short-turn downtown trips (250/257 direction) from {start}; flag southbound Lions Gate "
-                 "pressure to bridge operations; staff the downtown bays."),
-    "WEST_VAN_LOCAL": ("Ask West Vancouver Blue Bus to hold a spare local bus at Park Royal from {start}; "
-                       "open overflow wayfinding at the local bays."),
-}
 SEVERE = ("Strained", "Critical")
 ICON = {"Prepared": "🟢", "Watch": "🟡", "Strained": "🟠", "Critical": "🔴"}
+SERVICE_LABELS = {"WEEKDAY": "weekday", "SATURDAY": "Saturday", "SUNDAY_HOLIDAY": "Sunday/holiday"}
 
 
-def build_timeline(pr_slots: pd.DataFrame, pr_slot_corridor: pd.DataFrame, forecast: pd.DataFrame,
-                   service: pd.DataFrame, pr_days: pd.DataFrame):
-    """One row per slot × route group: forecast demand, scheduled trips, gap and readiness for
-    +30…+120 min, plus the action card text. Returns (timeline, typical_load per group)."""
-    pr_slots = pr_slots.sort_values("slot_ts").reset_index(drop=True)
-    grid = pd.DatetimeIndex(pr_slots["slot_ts"])
+def build_timeline(slots: pd.DataFrame, slot_corridor: pd.DataFrame, forecast: pd.DataFrame,
+                   service: pd.DataFrame, days: pd.DataFrame, poi: dict):
+    """One row per slot × route group: forecast demand, scheduled capacity, gap and readiness for
+    +30…+120 min, plus the action card text. Returns (timeline, typical_load per group × service day type)."""
+    groups, gcorr = S.groups(poi), S.group_corridors(poi)
+    slots = slots.sort_values("slot_ts").reset_index(drop=True)
+    grid = pd.DatetimeIndex(slots["slot_ts"])
     n = len(grid)
-    sod = pr_slots["slot_of_day"].to_numpy()
-    sdt = pr_slots["service_day_type"].to_numpy()
-    day_type = pr_slots["day_type"].to_numpy()
+    sod = slots["slot_of_day"].to_numpy()
+    sdt = slots["service_day_type"].to_numpy()
+    day_type = slots["day_type"].to_numpy()
 
-    # scheduled trips, smoothed over the slot and the next one (riders can take either bus)
+    # scheduled capacity (bus-equivalents), smoothed over the slot and the next one (riders can take either)
     svc = service.pivot_table(index=["service_day_type", "slot_of_day"], columns="route_group",
-                              values="scheduled_departures", aggfunc="sum").reindex(columns=S.ROUTE_GROUPS).fillna(0)
+                              values="scheduled_capacity", aggfunc="sum").reindex(columns=groups).fillna(0)
     smooth = {}
     for t, block in svc.groupby(level=0):
         b = block.droplevel(0).reindex(range(S.SLOTS_PER_DAY), fill_value=0)
         smooth[t] = sum(np.roll(b.to_numpy(), -k, axis=0) for k in range(S.SERVICE_SMOOTH_SLOTS)) / S.SERVICE_SMOOTH_SLOTS
-    gi = {g: i for i, g in enumerate(S.ROUTE_GROUPS)}
+    gi = {g: i for i, g in enumerate(groups)}
 
     fc = forecast[forecast["corridor"] != "ALL"]
-    normal_days = set(pd.to_datetime(pr_days.loc[pr_days["surge_ratio"] < S.NORMAL_DAY_MAX_RATIO, "date"]))
+    normal_days = set(pd.to_datetime(days.loc[days["surge_ratio"] < S.NORMAL_DAY_MAX_RATIO, "date"]))
 
-    base_dep = pr_slot_corridor.pivot_table(index="slot_ts", columns="corridor", values="baseline_departures").reindex(grid)
+    base_dep = slot_corridor.pivot_table(index="slot_ts", columns="corridor", values="baseline_departures").reindex(grid)
 
     per_h = {}
     for h in S.HORIZONS:
@@ -387,7 +419,7 @@ def build_timeline(pr_slots: pd.DataFrame, pr_slot_corridor: pd.DataFrame, forec
         valid = tgt_idx < n
         tgt_idx = np.where(valid, tgt_idx, n - 1)
         tgt_ts = grid[tgt_idx]
-        for g, cs in S.GROUP_CORRIDORS.items():
+        for g, cs in gcorr.items():
             dem = f["dep_hat"].reindex(index=tgt_ts, columns=cs).sum(axis=1, min_count=1).to_numpy()
             act = f["dep_actual"].reindex(index=tgt_ts, columns=cs).sum(axis=1, min_count=1).to_numpy()
             dem[~valid] = np.nan
@@ -398,38 +430,58 @@ def build_timeline(pr_slots: pd.DataFrame, pr_slot_corridor: pd.DataFrame, forec
                              "idx": dem / usual, "tgt": tgt_idx}
 
     # typical load per group × service day type (a normal Saturday is judged against Saturday service):
-    # normal days, training period, daytime target slots with service, all horizons pooled
+    # daytime target slots with service, all horizons pooled. Whole-year POIs: one value per service day
+    # type from the training period. Seasonal POIs (baseline_weeks): the median daily daytime load of the
+    # same service day type within ±baseline_weeks weeks, so a term day is judged against term.
     train = np.asarray(grid < pd.Timestamp(S.TRAIN_END))
     is_normal = np.asarray(grid.normalize().isin(list(normal_days)))
     lo, hi = S.TYPICAL_LOAD_SLOTS
-    typical_load, typical_dem = {}, {}
-    for g in S.ROUTE_GROUPS:
-        dems = []
-        for t_sdt in S.SERVICE_REP_DATES:
-            vals = []
-            for h in S.HORIZONS:
-                d = per_h[(g, h)]
-                tsod = sod[d["tgt"]]
-                m = (train & is_normal & (sdt[d["tgt"]] == t_sdt) & (tsod >= lo) & (tsod < hi)
-                     & (d["svc"] > 0) & np.isfinite(d["load"]))
-                vals.append(d["load"][m])
-                dems.append(d["dem"][m])
-            vals = np.concatenate(vals)
-            typical_load[(g, t_sdt)] = float(np.median(vals)) if len(vals) else np.nan
+    weeks = poi.get("baseline_weeks")
+    dates = grid.normalize()
+    sdt_of_date = pd.Series(sdt, index=dates).groupby(level=0).first()
+    typical_load, typical_dem, tl_arr = {}, {}, {}
+    for g in groups:
+        loads, pos, dems = [], [], []
+        for h in S.HORIZONS:
+            d = per_h[(g, h)]
+            tsod = sod[d["tgt"]]
+            m = (tsod >= lo) & (tsod < hi) & (d["svc"] > 0) & np.isfinite(d["load"])
+            m_train = m & train & is_normal
+            dems.append(d["dem"][m_train])
+            use = m if weeks else m_train
+            loads.append(d["load"][use])
+            pos.append(d["tgt"][use])
+        load, pos = np.concatenate(loads), np.concatenate(pos)
         typical_dem[g] = float(np.median(np.concatenate(dems)))
+        if not weeks:
+            for t_sdt in S.SERVICE_REP_DATES:
+                sel = sdt[pos] == t_sdt
+                typical_load[(g, t_sdt)] = float(np.median(load[sel])) if sel.any() else np.nan
+            tl_arr[g] = np.array([typical_load[(g, s)] for s in sdt])
+        else:
+            daily = pd.Series(load, index=dates[pos]).groupby(level=0).median()
+            by_date = pd.Series(np.nan, index=sdt_of_date.index)
+            for t_sdt in S.SERVICE_REP_DATES:
+                ds = daily[sdt_of_date.reindex(daily.index).to_numpy() == t_sdt]
+                if len(ds):
+                    r = ds.rolling(f"{(2 * weeks + 1) * 7}D", center=True, min_periods=1).median()
+                    by_date.loc[r.index] = r.to_numpy()
+                    typical_load[(g, t_sdt)] = float(r.median())
+                else:
+                    typical_load[(g, t_sdt)] = np.nan
+            tl_arr[g] = by_date.ffill().bfill().reindex(dates).to_numpy()
 
     frames = []
-    for g in S.ROUTE_GROUPS:
+    for g in groups:
         t = pd.DataFrame({
-            "slot_ts": grid, "date": grid.normalize(), "slot_of_day": sod, "day_type": day_type,
+            "poi": poi["key"], "slot_ts": grid, "date": grid.normalize(), "slot_of_day": sod, "day_type": day_type,
             "service_day_type": sdt, "route_group": g,
-            "pressure": pr_slots["pressure"].to_numpy(), "pressure_level": pr_slots["pressure_level"].to_numpy(),
-            "signature": pr_slots["signature"].to_numpy(),
+            "pressure": slots["pressure"].to_numpy(), "pressure_level": slots["pressure_level"].to_numpy(),
+            "signature": slots["signature"].to_numpy(),
         })
         for h in S.HORIZONS:
             d = per_h[(g, h)]
-            tl_ = np.array([typical_load[(g, s)] for s in sdt[d["tgt"]]])
-            gap = d["load"] / tl_
+            gap = d["load"] / tl_arr[g][d["tgt"]]
             no_service = d["svc"] <= 0
             gap[no_service] = np.nan
             quiet = d["dem"] < S.MIN_DEMAND_SHARE * typical_dem[g]
@@ -442,17 +494,18 @@ def build_timeline(pr_slots: pd.DataFrame, pr_slot_corridor: pd.DataFrame, forec
                 "No service" if ns else "Prepared" if q else level(x, S.READINESS_LEVELS)
                 for x, ns, q in zip(gap, no_service, quiet)
             ]
-        t["typical_load"] = [typical_load[(g, s)] for s in sdt]
+        t["typical_load"] = tl_arr[g]
         t["typical_demand"] = typical_dem[g]
         frames.append(t)
     tl = pd.concat(frames, ignore_index=True)
-    actions = [_action(r) for r in tl.itertuples(index=False)]
+    by_key = {g["key"]: g for g in poi["groups"]}
+    actions = [_action(r, by_key[r.route_group]) for r in tl.itertuples(index=False)]
     tl["action_text"] = [a for a, _ in actions]
     tl["action_priority"] = pd.to_numeric(pd.Series([p for _, p in actions], dtype="float64"))
     return tl, typical_load
 
 
-def _action(r):
+def _action(r, group: dict):
     levels = [getattr(r, f"readiness_h{h}") for h in S.HORIZONS]
     hits = [i for i, lv in enumerate(levels) if lv in SEVERE]
     if not hits:
@@ -468,9 +521,10 @@ def _action(r):
     win_start = r.slot_ts + h0 * SLOT
     win_end = r.slot_ts + (S.HORIZONS[last] + 1) * SLOT
     stage = win_start - pd.Timedelta(minutes=15)
-    label = S.GROUP_LABELS[r.route_group]
-    day = {"WEEKDAY": "weekday", "SATURDAY": "Saturday", "SUNDAY_HOLIDAY": "Sunday/holiday"}[r.service_day_type]
+    label = group["label"]
+    day = SERVICE_LABELS[r.service_day_type]
+    levers = "; ".join(lv.format(start=f"{stage:%H:%M}") for lv in group["levers"])
     text = (f"{ICON[worst]} {label} {worst.lower()} {win_start:%H:%M}–{win_end:%H:%M} (in {h0 * S.SLOT_MINUTES} min). "
-            f"Expected {label.lower()} exit demand per scheduled trip is {peak:.1f}× a normal {day} on the {day} schedule. "
-            + LEVERS[r.route_group].format(start=f"{stage:%H:%M}"))
+            f"Expected {label.lower()} exit demand per unit of scheduled service is {peak:.1f}× a normal {day} "
+            f"on the {day} schedule. {levers}.")
     return text, float(peak)

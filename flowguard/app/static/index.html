@@ -16,11 +16,16 @@
       </div>
       <div>
         <h1>FlowGuard</h1>
-        <p class="tagline">Park Royal exit-wave console · TransLink operations</p>
+        <p class="tagline" id="tagline">Exit-wave console · TransLink operations</p>
       </div>
     </div>
 
     <div class="controls">
+      <div class="field">
+        <span class="field-label">Location</span>
+        <div id="poiSwitch" class="poi-switch" role="tablist" aria-label="Location"></div>
+      </div>
+
       <label class="field">
         <span class="field-label">Day</span>
         <select id="day" aria-label="Day"></select>
@@ -102,7 +107,7 @@
       </article>
 
       <article class="card" id="readyCard">
-        <h2>Transit readiness <span class="h2-sub">expected exit demand per scheduled trip vs normal</span></h2>
+        <h2>Transit readiness <span class="h2-sub">expected exit demand per unit of scheduled service vs normal</span></h2>
         <div class="table-wrap"><table id="ready" class="ready"></table></div>
       </article>
     </section>
@@ -123,7 +128,7 @@
     </div>
     <p class="caption">Stress-test the next two hours. Everything recalculates instantly.</p>
     <div class="presets">
-      <button class="btn" data-preset="boxing">Boxing Day replay</button>
+      <button class="btn" data-preset="surge" id="surgePreset">Surge day replay</button>
       <button class="btn" data-preset="event">Event ends 10 PM</button>
       <button class="btn" data-preset="service">Service −30%</button>
       <button class="btn ghost" data-preset="reset">Reset</button>

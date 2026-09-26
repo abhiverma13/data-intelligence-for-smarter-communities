@@ -1,4 +1,5 @@
-"""Live reads of the gold tables through the SQL warehouse. Every query is small and pre-aggregated.
+"""Live reads of the gold tables through the SQL warehouse. Every query is small and pre-aggregated,
+and filtered to one point of interest (poi).
 
 Each function returns raw rows (list of dicts) with timestamps as 'YYYY-MM-DD HH:MM:SS' strings and dates as
 'YYYY-MM-DD', which is the same shape the snapshot JSON files store.
@@ -11,8 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 
 from .config import table
-from .logic import SLOT_COLS, TIMELINE_COLS
+from .logic import CORRIDOR_COLS, SLOT_COLS, TIMELINE_COLS
 from .sql import run_query
+
+DAY_COLS = "date, day_type, service_day_type, arrivals, surge_ratio, is_surge, peak_pressure, label"
 
 
 def _norm(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -31,31 +34,28 @@ def _norm(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-def days() -> List[Dict[str, Any]]:
-    return _norm(run_query(
-        f"SELECT date, day_type, service_day_type, arrivals, surge_ratio, is_surge, peak_pressure, label "
-        f"FROM {table('pr_days')} ORDER BY date"
-    ))
+def days(poi: str) -> List[Dict[str, Any]]:
+    return _norm(run_query(f"SELECT {DAY_COLS} FROM {table('days')} WHERE poi = :p ORDER BY date", {"p": poi}))
 
 
-def model() -> Dict[str, List[Dict[str, Any]]]:
+def model(poi: str) -> Dict[str, List[Dict[str, Any]]]:
+    p = {"p": poi}
     return {
-        "kernel": _norm(run_query(f"SELECT k, p, cum_p FROM {table('egress_kernel')} ORDER BY k")),
-        "backtest": _norm(run_query(f"SELECT horizon, model, target, r2, mae, n FROM {table('model_backtest')}")),
+        "kernel": _norm(run_query(f"SELECT k, p, cum_p FROM {table('egress_kernel')} WHERE poi = :p ORDER BY k", p)),
+        "backtest": _norm(run_query(f"SELECT horizon, model, target, r2, mae, n FROM {table('model_backtest')} WHERE poi = :p", p)),
     }
 
 
-def day(date: str) -> Dict[str, Any]:
-    p = {"d": date}
+def day(poi: str, date: str) -> Dict[str, Any]:
+    p = {"p": poi, "d": date}
     sql = {
-        "day": f"SELECT date, day_type, service_day_type, arrivals, surge_ratio, is_surge, peak_pressure, label "
-               f"FROM {table('pr_days')} WHERE date = :d",
-        "slots": f"SELECT {', '.join(SLOT_COLS)} FROM {table('pr_slots')} WHERE date = :d",
-        "timeline": f"SELECT {', '.join(TIMELINE_COLS)} FROM {table('flowguard_timeline')} WHERE date = :d",
+        "day": f"SELECT {DAY_COLS} FROM {table('days')} WHERE poi = :p AND date = :d",
+        "slots": f"SELECT {', '.join(SLOT_COLS)} FROM {table('slots')} WHERE poi = :p AND date = :d",
+        "timeline": f"SELECT {', '.join(TIMELINE_COLS)} FROM {table('flowguard_timeline')} WHERE poi = :p AND date = :d",
         "forecast_all": f"SELECT origin_slot_ts, horizon, dep_hat FROM {table('egress_forecast')} "
-                        f"WHERE corridor = 'ALL' AND CAST(origin_slot_ts AS DATE) = :d",
-        "corridor_mix": f"SELECT corridor, SUM(departures) AS departures FROM {table('pr_slot_corridor')} "
-                        f"WHERE CAST(slot_ts AS DATE) = :d GROUP BY corridor",
+                        f"WHERE poi = :p AND corridor = 'ALL' AND CAST(origin_slot_ts AS DATE) = :d",
+        "corridors": f"SELECT {', '.join(CORRIDOR_COLS)} FROM {table('slot_corridor')} "
+                     f"WHERE poi = :p AND CAST(slot_ts AS DATE) = :d",
     }
     # the five small queries run in parallel (each opens its own warehouse session)
     with ThreadPoolExecutor(max_workers=len(sql)) as pool:

@@ -1,13 +1,13 @@
-/* FlowGuard map view: a Leaflet map (Esri basemap tiles, no API key) of the Park Royal exit corridors with real TransLink
-   route geometry (static/data/map.json) and a per-route exit-wave timeline. It reads the same /api/day payload
-   and the same client-side view()/actionsAt() maths as the radar, so map values always agree with the readiness
-   table and the server. If the tiles can't load (offline), the committed land silhouette is drawn instead. */
+/* FlowGuard map view: a Leaflet map (Esri basemap tiles, no API key) of each location's exit corridors with real
+   TransLink route geometry (static/data/<poi>/map.json) and a per-route exit-wave timeline. It reads the same
+   /api/day payload and the same client-side view()/actionsAt() maths as the radar, so map values always agree with
+   the readiness table and the server. If the tiles can't load (offline), the committed land silhouette is drawn. */
 "use strict";
 
 window.FlowGuardMap = (function () {
   const READY_VAR = { Prepared: "--good", Watch: "--warning", Strained: "--serious", Critical: "--critical", "No service": "--none" };
   const SEVERITY = { Prepared: 0, Watch: 1, Strained: 2, Critical: 3 };
-  const BAND_CORNER = { WEST_VAN_LOCAL: "topleft", DOWNTOWN: "bottomleft", EASTBOUND: "bottomright" };
+  const CORNER_ORDER = ["topleft", "bottomleft", "bottomright", "topright"];   // fallback if map.json has no corner
   const BAND_W = 252, BAND_H = 88;
   const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/";
   const TILES = {                        // Esri basemaps: no API key; attribution required
@@ -16,9 +16,10 @@ window.FlowGuardMap = (function () {
   };
   const ATTRIB = 'Basemap &copy; <a href="https://www.esri.com">Esri</a>, HERE, Garmin, &copy; OpenStreetMap contributors · Routes: TransLink GTFS';
 
-  let geo = null, loading = null, host = null, onReady = null;
-  let map = null, tiles = null, tileTheme = null, tileOk = false, tileErr = 0, landLayer = null;
-  let routeLayers = {}, wpLayer = null, bandEls = {}, kpiEl = null;
+  const geos = {}, pending = {};                  // map.json per POI key
+  let host = null, geo = null, poiKey = null, failed = null;
+  let map = null, tiles = null, tileTheme = null, tileOk = false, tileErr = 0, landLayer = null, kpiEl = null;
+  let layers = null;                               // per-POI: { routes: {g: {...}}, wp, bands: {g: el}, controls: [] }
 
   const col = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -28,14 +29,18 @@ window.FlowGuardMap = (function () {
   const worstOf = (ready) => ready.includes("Critical") ? "Critical" : ready.includes("Strained") ? "Strained"
     : ready.includes("Watch") ? "Watch" : "Prepared";
 
-  function loadGeo(cb) {
-    if (geo) return cb();
-    onReady = cb;
-    if (loading) return;
-    loading = fetch("/static/data/map.json")
-      .then((r) => r.json())
-      .then((g) => { geo = g; onReady && onReady(); })
-      .catch((e) => { if (host) host.innerHTML = `<div class="map-msg">Map geometry unavailable (${esc(e.message)}).</div>`; });
+  function loadGeo(key, cb) {
+    if (geos[key]) return cb();
+    if (pending[key]) { pending[key].cb = cb; return; }
+    pending[key] = { cb };
+    fetch(`/static/data/${encodeURIComponent(key)}/map.json`)
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((g) => { geos[key] = g; const p = pending[key]; delete pending[key]; p.cb(); })
+      .catch((e) => {
+        delete pending[key]; failed = key;
+        if (host && !map) host.innerHTML = `<div class="map-msg">Map geometry unavailable (${esc(e.message)}).</div>`;
+        else console.warn(`FlowGuard map: no geometry for ${key} (${e.message})`);
+      });
   }
 
   // ------------------------------------------------------------ per-route exit-wave band (now → +120)
@@ -78,12 +83,12 @@ window.FlowGuardMap = (function () {
     </svg>`;
   }
 
-  // ------------------------------------------------------------ one-time map setup
+  // ------------------------------------------------------------ map setup (once) and per-POI layers
   function panel(corner, cls) {
     const Ctl = L.Control.extend({ onAdd() { const d = L.DomUtil.create("div", `map-panel ${cls}`); L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d); return d; } });
     const c = new Ctl({ position: corner });
     c.addTo(map);
-    return c.getContainer();
+    return c;
   }
 
   function setTiles() {
@@ -102,18 +107,18 @@ window.FlowGuardMap = (function () {
   /** Offline fallback: the committed Natural Earth silhouette over the map-water background. */
   function showLand() {
     host.classList.add("map-offline");
-    if (landLayer) return;
+    if (landLayer) map.removeLayer(landLayer);
     landLayer = L.layerGroup(geo.land.map((ring) => L.polygon(ll(ring),
       { color: col("--map-land-edge"), weight: 1, fillColor: col("--map-land"), fillOpacity: 1, interactive: false }))).addTo(map);
     landLayer.eachLayer((l) => l.bringToBack());
   }
 
-  function fit() {
+  function fit() {                                   // vertical padding keeps lines clear of the corner bands
     const b = geo.bbox;
-    map.fitBounds([[b[1], b[0]], [b[3], b[2]]], { paddingTopLeft: [8, 40], paddingBottomRight: [8, 40] });
+    map.fitBounds([[b[1], b[0]], [b[3], b[2]]], { paddingTopLeft: [12, 92], paddingBottomRight: [12, 92] });
   }
 
-  function create(fg) {
+  function create() {
     host.innerHTML = "";
     map = L.map(host, { zoomControl: false, scrollWheelZoom: false, zoomSnap: 0.25, attributionControl: true });
     map.attributionControl.setPrefix(false);
@@ -121,7 +126,7 @@ window.FlowGuardMap = (function () {
     map.on("mouseout", () => map.scrollWheelZoom.disable());
     map.createPane("routes").style.zIndex = 420;
 
-    kpiEl = panel("topright", "map-kpi");
+    kpiEl = panel("topright", "map-kpi").getContainer();
     L.control.zoom({ position: "topright" }).addTo(map);
     const Reset = L.Control.extend({ onAdd() {
       const b = L.DomUtil.create("button", "map-reset btn small");
@@ -130,31 +135,59 @@ window.FlowGuardMap = (function () {
       return b;
     } });
     new Reset({ position: "topright" }).addTo(map);
+    setTiles();
+    new ResizeObserver(() => { if (host.offsetWidth) map.invalidateSize(); }).observe(host);
+  }
 
-    fg.state.day.group_order.forEach((g) => {
-      if (!geo.groups[g]) return;
-      const lines = geo.groups[g].lines.map(ll);
+  /** Hovering a band card highlights its route group's lines and fades the others. */
+  function focusGroup(g) {
+    Object.entries(layers.routes).forEach(([k, R]) => {
+      const on = g == null || k === g;
+      R.line.setStyle({ opacity: on ? 0.92 : 0.25, weight: R.line._fgW + (g != null && k === g ? 3 : 0) });
+      R.casing.setStyle({ opacity: on ? 0.95 : 0.2 });
+    });
+  }
+
+  function dropLayers() {
+    if (!layers) return;
+    Object.values(layers.routes).forEach((R) => R.group.remove());
+    layers.wp.remove();
+    layers.controls.forEach((c) => c.remove());
+    if (landLayer) { map.removeLayer(landLayer); landLayer = null; }
+    layers = null;
+  }
+
+  function buildLayers(fg) {
+    dropLayers();
+    layers = { routes: {}, wp: L.layerGroup().addTo(map), bands: {}, controls: [] };
+    const order = geo.group_order || fg.state.day.group_order;
+    order.forEach((g, i) => {
+      const G = geo.groups[g];
+      if (!G) return;
+      const lines = G.lines.map(ll);
       const casing = L.polyline(lines, { pane: "routes", color: col("--surface"), opacity: 0.95, lineCap: "round", lineJoin: "round", interactive: false });
       const line = L.polyline(lines, { pane: "routes", opacity: 0.92, lineCap: "round", lineJoin: "round" });
+      line._fgW = 6;
       line.bindTooltip("", { sticky: true, className: "map-tip" });
-      line.on("mouseover", () => line.setStyle({ weight: line._fgW + 3 }));
-      line.on("mouseout", () => line.setStyle({ weight: line._fgW }));
-      routeLayers[g] = { casing, line, group: L.layerGroup([casing, line]).addTo(map) };
-      if (BAND_CORNER[g]) bandEls[g] = panel(BAND_CORNER[g], "map-bandbox");
+      line.on("mouseover", () => focusGroup(g));
+      line.on("mouseout", () => focusGroup(null));
+      layers.routes[g] = { casing, line, group: L.layerGroup([casing, line]).addTo(map) };
+      const ctl = panel(G.corner || CORNER_ORDER[i % CORNER_ORDER.length], "map-bandbox");
+      const el = ctl.getContainer();
+      el.addEventListener("mouseenter", () => focusGroup(g));
+      el.addEventListener("mouseleave", () => focusGroup(null));
+      layers.controls.push(ctl);
+      layers.bands[g] = el;
     });
-
-    wpLayer = L.layerGroup().addTo(map);
     geo.waypoints.forEach((p) => {
       const hub = p.kind === "hub";
       const m = L.circleMarker([p.lat, p.lon], { pane: "markerPane", radius: hub ? 9 : 4, weight: hub ? 3 : 1.5, fillOpacity: 1, className: hub ? "map-hub" : "map-wp" });
       m.bindTooltip(esc(p.label), { permanent: true, direction: "right", offset: [hub ? 10 : 6, 0], className: hub ? "map-label hub" : "map-label" });
       m._fgHub = hub;
-      m.addTo(wpLayer);
+      m.addTo(layers.wp);
     });
-
-    setTiles();
+    if (host.classList.contains("map-offline")) showLand();
     fit();
-    new ResizeObserver(() => { if (host.offsetWidth) map.invalidateSize(); }).observe(host);
   }
 
   // ------------------------------------------------------------ per-tick restyle
@@ -162,37 +195,44 @@ window.FlowGuardMap = (function () {
     const day = fg.state.day, t = fg.state.slot;
     setTiles();
     if (landLayer) landLayer.eachLayer((l) => l.setStyle({ color: col("--map-land-edge"), fillColor: col("--map-land") }));
-    wpLayer.eachLayer((m) => m.setStyle({ color: col("--surface"), fillColor: m._fgHub ? col("--accent") : col("--ink-2") }));
+    layers.wp.eachLayer((m) => m.setStyle({ color: col("--surface"), fillColor: m._fgHub ? col("--accent") : col("--ink-2") }));
 
     const sev = [];
     day.group_order.forEach((g) => {
-      const R = routeLayers[g], rows = day.groups[g].rows;
+      const R = layers.routes[g], G = day.groups[g], rows = G && G.rows;
       if (!R) return;
       if (!rows || !rows[t]) { R.group.remove(); return; }
       R.group.addTo(map);
       const v = fg.view(g, t), worst = worstOf(v.map((r) => r.ready));
       const idx = v[0] && v[0].idx;
       const w = Math.min(11, 4 + (idx || 1) * 2);
-      R.casing.setStyle({ weight: w + 4, color: col("--surface") });
       R.line._fgW = w;
+      R.casing.setStyle({ weight: w + 4, color: col("--surface") });
       R.line.setStyle({ weight: w, color: readyColor(worst) });
-      R.line.setTooltipContent(`<b>${esc(day.groups[g].label)}</b> · ${esc(worst)}<br>Next 30 min: ${idx == null ? "–" : idx.toFixed(1) + "× normal exit demand"}`);
+      R.line.setTooltipContent(`<b>${esc(G.label)}</b> · ${esc(worst)}<br>${esc(G.routes || "")}<br>Next 30 min: ${idx == null ? "–" : idx.toFixed(1) + "× normal exit demand"}`);
       sev.push([SEVERITY[worst] || 0, R]);
-      if (bandEls[g]) bandEls[g].innerHTML = bandSvg(g, fg);
+      if (layers.bands[g]) layers.bands[g].innerHTML = bandSvg(g, fg);
     });
     sev.sort((a, b) => a[0] - b[0]).forEach(([, R]) => { R.casing.bringToFront(); R.line.bringToFront(); });  // worst on top
 
     const p = day.slots[t];
-    kpiEl.innerHTML = `<div class="caption">Park Royal now</div><div><b>${p && p.pressure != null ? p.pressure.toFixed(1) + "×" : "–"}</b> × normal occupancy</div>`;
+    kpiEl.innerHTML = `<div class="caption">${esc(day.poi.name)} now</div><div><b>${p && p.pressure != null ? p.pressure.toFixed(1) + "×" : "–"}</b> × normal occupancy</div>`;
   }
 
   function render(fg) {
     host = host || document.getElementById("mapbox");
-    if (!host) return;
-    if (!geo) { host.innerHTML = '<div class="map-msg">Loading map…</div>'; loadGeo(() => render(fg)); return; }
+    if (!host || !fg.state.day) return;
+    const key = fg.state.day.poi.key;                         // the loaded day's POI, so layers and data always match
     if (!window.L) { host.innerHTML = '<div class="map-msg">Map library unavailable.</div>'; return; }
-    if (!map) create(fg);
+    if (!geos[key]) {
+      if (failed === key) return;
+      if (!map) host.innerHTML = '<div class="map-msg">Loading map…</div>';
+      loadGeo(key, () => render(fg));
+      return;
+    }
+    if (!map) create();
     else if (host.offsetWidth) map.invalidateSize();
+    if (key !== poiKey) { geo = geos[key]; poiKey = key; buildLayers(fg); }
     update(fg);
   }
 

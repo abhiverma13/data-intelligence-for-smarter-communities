@@ -32,12 +32,17 @@ Attach **Serverless**, run cells one at a time (no "Run all").
 |---|---|
 | `00_config` | shared settings + helpers, loaded by every notebook via `%run ./00_config` |
 | `01_setup_uc` | catalog, schemas, `raw` Volume, `bronze.ref_*` tables |
-| `02_bronze` | `bronze.pr_raw`, `bronze.gtfs_*` |
-| `03_silver` | `silver.pr_visits` + data quality checks |
-| `04_gold_slots` | `gold.pr_slots`, `gold.pr_slot_corridor`, `gold.pr_days` |
-| `05_egress_model` | `gold.egress_kernel`, `gold.egress_forecast`, `gold.model_backtest` + MLflow run |
-| `06_gtfs_service` | `silver.gtfs_parkroyal_departures`, `gold.gtfs_service_30min` |
+| `02_bronze` | `bronze.mobility_raw` (all POIs), `bronze.gtfs_*` |
+| `03_silver` | `silver.visits` + data quality checks per POI |
+| `04_gold_slots` | `gold.slots`, `gold.slot_corridor`, `gold.days` |
+| `05_egress_model` | `gold.egress_kernel`, `gold.egress_forecast`, `gold.model_backtest` + one MLflow run per POI |
+| `06_gtfs_service` | `silver.transit_stops`, `silver.transit_departures`, `gold.transit_service_30min` |
 | `07_timeline` | `gold.flowguard_timeline` (the table the app reads) |
+
+Every table has a `poi` column: `park_royal`, `ubc`, `waterfront`. Each point of interest (raw file,
+coordinates, stop radius, corridors, route groups and their headsign rules, operator levers, demo days,
+optional seasonal baseline) is defined once in [app/server/pois.json](app/server/pois.json), read by both the
+pipeline and the app. Origin → corridor mappings per POI are in `config/origin_corridor.csv`.
 
 All thresholds live in `pipeline/fg_settings.py` and all formulas in `pipeline/fg_core.py` (plain Python,
 imported by the notebooks and by `local/run_local.py`, so Databricks and local runs give identical numbers).
@@ -50,8 +55,9 @@ The Job `flowguard-refresh` ([deploy/job.json](deploy/job.json)) chains 01 → 0
 ## App
 
 `app/` is a Databricks App: FastAPI (`app.py`, `server/`) + a static page (`static/index.html`, `app.js`,
-`styles.css`, Chart.js bundled in `static/vendor/`). `DATA_MODE=live` reads the gold tables through the SQL
-warehouse and falls back automatically to the bundled snapshot `static/data/*.json`; `DATA_MODE=snapshot`
+`styles.css`, Chart.js bundled in `static/vendor/`), with a Park Royal / UBC / Waterfront switcher (every endpoint
+takes `?poi=`). `DATA_MODE=live` reads the gold tables through the SQL warehouse and falls back automatically to
+the bundled snapshot `static/data/<poi>/*.json`; `DATA_MODE=snapshot`
 never touches the warehouse. Scenario Lab maths runs in the browser (`?selftest=1` checks it matches the server).
 
 ```
@@ -81,3 +87,10 @@ If `CREATE CATALOG` isn't permitted, everything falls back to the `workspace` ca
 - Park Royal CSV: stays where it was downloaded (`synthetic_park_royal_mall.csv`).
 - GTFS: `local/data/google_transit.zip`, unzipped to `local/data/gtfs/`
   (source: https://gtfs-static.translink.ca/gtfs/google_transit.zip).
+
+## Deploy / redeploy the app
+
+```
+databricks apps deploy flowguard --source-code-path /Workspace/Users/a.verma1304@gmail.com/data-intelligence-for-smarter-communities/flowguard/app --profile flowguard
+```
+(push → Pull in the Git folder first). Apps auto-stop 24 h after start/deploy: `databricks apps start flowguard --profile flowguard`.
