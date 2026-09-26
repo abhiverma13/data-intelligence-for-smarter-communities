@@ -126,7 +126,7 @@ function renderPressure() {
   const d = state.day, s = d.slots[state.slot];
   $("#pressureVal").textContent = s.pressure == null ? "–" : s.pressure.toFixed(1);
   $("#pressureChip").innerHTML = chip(s.level);
-  $("#pressureCaption").textContent = `People on site vs a normal ${DAY_NAMES[d.day_type]} at ${s.t}`;
+  $("#pressureCaption").textContent = `${d.future ? "Expected people" : "People"} on site vs a normal ${DAY_NAMES[d.day_type]} at ${s.t}`;
 
   const from = Math.min(CHART_FROM, state.slot), pts = d.slots.slice(from, state.slot + 1).map((x) => x.pressure ?? 0);
   const all = d.slots.map((x) => x.pressure ?? 0);
@@ -169,7 +169,7 @@ function renderCatchment() {
 
 function renderAction() {
   const d = state.day, acts = actionsAt(state.slot), card = $("#actionCard");
-  const tag = scenarioActive() ? " <small>(scenario)</small>" : "";
+  const tag = (d.future ? " <small>(outlook)</small>" : "") + (scenarioActive() ? " <small>(scenario)</small>" : "");
   if (!acts.length) {
     card.style.setProperty("--st", css("--good"));
     card.innerHTML = `<div class="action-top">${chip("Prepared")}
@@ -193,17 +193,19 @@ function renderAction() {
 function radarData() {
   const d = state.day, t = state.slot, e = d.exit, f = 100 / e.normal_peak, sc = state.sc;
   const idx = [...Array(48 - CHART_FROM).keys()].map((i) => i + CHART_FROM);
-  const actual = idx.map((i) => (i <= t ? e.actual[i] * f : null));
+  const now = d.future ? e.expected[t] : e.actual[t];
+  const actual = idx.map((i) => (!d.future && i <= t ? e.actual[i] * f : null));
+  const expected = idx.map((i) => (d.future && e.expected[i] != null ? e.expected[i] * f : null));
   const usual = idx.map((i) => (e.usual[i] == null ? null : e.usual[i] * f));
   const forecast = idx.map((i) => {
-    if (i === t) return e.actual[t] * f;
+    if (i === t) return now == null ? null : now * f;
     const k = i - t;
     if (k < 1 || k > 4) return null;
     const v = e.forecast[t]?.[k - 1];
     return v == null ? null : (v * (1 + sc.crowd / 100) + extraTotal(i)) * f;
   });
-  const earlier = idx.map((i) => (i <= t && i >= 2 && e.forecast[i - 2]?.[1] != null ? e.forecast[i - 2][1] * f : null));
-  return { labels: idx.map(fmtSlot), actual, usual, forecast, earlier, nowIdx: t - CHART_FROM };
+  const earlier = idx.map((i) => (!d.future && i <= t && i >= 2 && e.forecast[i - 2]?.[1] != null ? e.forecast[i - 2][1] * f : null));
+  return { labels: idx.map(fmtSlot), actual, expected, usual, forecast, earlier, nowIdx: t - CHART_FROM };
 }
 
 const nowLine = {
@@ -232,7 +234,8 @@ const nowLine = {
 };
 
 function radarColors(chart) {
-  const [a, f, e, u] = chart.data.datasets;
+  const [a, f, e, u, x] = chart.data.datasets;
+  x.borderColor = css("--outlook");
   a.borderColor = a.backgroundColor = css("--series-actual");
   f.borderColor = f.backgroundColor = css("--series-forecast");
   f.pointBorderColor = css("--surface");
@@ -259,6 +262,7 @@ function renderRadar() {
           { label: "Forecast from now", data: r.forecast, borderWidth: 2.5, borderDash: [7, 5], pointRadius: 5, pointBorderWidth: 2, tension: 0.25 },
           { label: "Forecast made 60 min earlier", data: r.earlier, showLine: false, pointRadius: 4, pointBorderWidth: 2 },
           { label: "Normal day", data: r.usual, borderWidth: 2, pointRadius: 0, tension: 0.25 },
+          { label: "Expected exits (outlook)", data: r.expected, borderWidth: 2.5, borderDash: [3, 4], pointRadius: 0, tension: 0.25 },
         ],
       },
       options: {
@@ -285,7 +289,7 @@ function renderRadar() {
   }
   const ds = radar.data.datasets;
   radar.data.labels = r.labels;
-  ds[0].data = r.actual; ds[1].data = r.forecast; ds[2].data = r.earlier; ds[3].data = r.usual;
+  ds[0].data = r.actual; ds[1].data = r.forecast; ds[2].data = r.earlier; ds[3].data = r.usual; ds[4].data = r.expected;
   radar.$now = r.nowIdx;
   radar.update();
 }
@@ -349,12 +353,35 @@ function showError(msg) {
   b.hidden = false; b.className = "banner error"; b.textContent = msg;
 }
 
-async function loadDay(date) {
+function showLoader(text) {
+  $("#loaderText").textContent = text;
+  $("#loader").hidden = false;
   $("#main").classList.add("loading");
+}
+function hideLoader() {
+  $("#loader").hidden = true;
+  $("#main").classList.remove("loading");
+}
+const poiName = () => state.pois.find((p) => p.key === state.poi)?.name || "";
+
+function renderOutlook() {
+  const d = state.day, on = !!d.future;
+  document.body.classList.toggle("outlook", on);
+  $("#outlookBadge").hidden = !on;
+  $("#outlookBar").hidden = !on;
+  if (on) {
+    $("#outlookBar").innerHTML = `<b>Outlook: expected conditions, not observed data.</b> ${esc(d.method || "")}.
+      Scheduled service is TransLink's published timetable for ${fmtDate(d.date)}. Readiness and actions use the same model as past days.`;
+  }
+}
+
+async function loadDay(date) {
+  showLoader(`Loading ${poiName()} · ${fmtDate(date)}…`);
   try {
     const day = await getJSON(`/api/day?poi=${state.poi}&date=${date}`);
     state.day = day; state.date = date; state.source = day.source;
     $("#day").value = date;
+    renderOutlook();
     $("#banner").classList.remove("error");
     $("#source").textContent = day.source === "live" ? "Data: live · Databricks SQL (gold tables)" : "Data: offline snapshot of the gold tables";
     syncUrl();
@@ -362,15 +389,20 @@ async function loadDay(date) {
   } catch (e) {
     showError(`Couldn't load ${fmtDate(date)}: ${e.message}`);
   } finally {
-    $("#main").classList.remove("loading");
+    hideLoader();
   }
 }
 
 function fillDays() {
   const opt = (d, prefix = "") => `<option value="${d.date}">${prefix}${fmtDate(d.date)}${d.label ? ` · ${esc(d.label)}` : ""}${d.surge_ratio == null ? "" : ` · ${d.surge_ratio.toFixed(2)}× usual`}</option>`;
-  const preset = new Set(state.days.presets.map((d) => d.date));
-  $("#day").innerHTML = `<optgroup label="Demo days">${state.days.presets.map((d) => opt(d)).join("")}</optgroup>
-    <optgroup label="All days (daily arrivals vs usual)">${state.days.days.filter((d) => !preset.has(d.date)).map((d) => opt(d)).join("")}</optgroup>`;
+  const D = state.days;
+  const preset = new Set([...D.presets, ...(D.outlook_presets || [])].map((d) => d.date));
+  const rest = (list) => list.filter((d) => !preset.has(d.date));
+  const out = (d) => opt(d, "Outlook · ");
+  $("#day").innerHTML = `<optgroup label="Demo days · history (in the data)">${D.presets.map((d) => opt(d)).join("")}</optgroup>
+    ${(D.outlook_presets || []).length ? `<optgroup label="Demo days · outlook (future, expected)">${D.outlook_presets.map(out).join("")}</optgroup>` : ""}
+    <optgroup label="History · Nov 2025 – Aug 2026 (observed)">${rest(D.days).map((d) => opt(d)).join("")}</optgroup>
+    ${(D.future || []).length ? `<optgroup label="Outlook · Sep 7 2026 – Jan 3 2027 (expected, not observed)">${rest(D.future).map(out).join("")}</optgroup>` : ""}`;
 }
 
 function renderTrust() {
@@ -384,6 +416,9 @@ function renderTrust() {
       <tr><td>Same model without today's busyness</td>${HORIZONS.map((h) => `<td>${f(get("egress_static", "departures", h))}</td>`).join("")}</tr>
       <tr><td>Typical-week pattern</td>${HORIZONS.map((h) => `<td>${f(get("typical_week", "departures", h))}</td>`).join("")}</tr></table>
     <div>Learned from dwell time: ${(state.model?.kernel || []).filter((k) => [1, 2, 4].includes(k.k)).map((k) => `${pct(k.cum_p)} of visitors have left within ${(k.k + 1) * 30} min of arriving`).join(" · ")}.</div>
+    <div><b>Outlook days</b> (Sep 7 2026 – Jan 3 2027) are expected conditions, not observations: the crowd is the median of
+      comparable past days (last year's same holiday, otherwise the same week last year, otherwise a typical weekday) and the
+      service is TransLink's published timetable for that exact date.</div>
     <div>Times are Vancouver local time. The mobility data is a synthetic subscriber sample, so FlowGuard reports ratios to normal, never headcounts.
       Corridors use each device's home area as a proxy for the direction of outbound demand. Scheduled service comes from TransLink's Sept 2026 GTFS feed, applied by service day type (weekday / Saturday / Sunday-holiday), in bus-equivalents (SkyTrain and SeaBus ≈ 5 buses, West Coast Express ≈ 12).</div>`;
 }
@@ -487,7 +522,7 @@ function wire() {
   $("#day").addEventListener("change", (e) => loadDay(e.target.value));
   $("#play").addEventListener("click", () => togglePlay());
   $("#speed").addEventListener("click", () => {
-    state.speed = state.speed === 1 ? 4 : 1;
+    state.speed = { 1: 2, 2: 4, 4: 1 }[state.speed];
     $("#speed").textContent = `${state.speed}×`;
     if (state.playing) togglePlay(true);
   });
@@ -537,16 +572,18 @@ async function loadPoi(key, wantDate) {
   togglePlay(false);
   state.poi = key;
   renderPoiSwitch();
+  showLoader(`Loading ${poiName()}…`);
   try {
     [state.days, state.model] = await Promise.all([getJSON(`/api/days?poi=${key}`), getJSON(`/api/model?poi=${key}`)]);
   } catch (e) {
+    hideLoader();
     return showError(`FlowGuard data is unavailable: ${e.message}`);
   }
   fillDays();
   renderTrust();
   const top = state.days.presets[0];
   $("#surgePreset").textContent = top ? `${top.label} replay` : "Surge day replay";
-  const all = [...state.days.presets, ...state.days.days].map((d) => d.date);
+  const all = [...state.days.presets, ...state.days.days, ...(state.days.future || [])].map((d) => d.date);
   const date = all.includes(wantDate) ? wantDate : all.includes(state.days.default_date) ? state.days.default_date : all[0];
   await loadDay(date);
 }

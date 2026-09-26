@@ -62,6 +62,11 @@ def main():
     fc_all = with_date(fc_all[fc_all["corridor"] == "ALL"], "origin_slot_ts")
     sc_all = with_date(pd.read_csv(GOLD / "slot_corridor.csv", parse_dates=["slot_ts"]), "slot_ts")
     kernel_all = pd.read_csv(GOLD / "egress_kernel.csv")
+    o_days_all = pd.read_csv(GOLD / "outlook_days.csv")
+    o_days_all["label"] = o_days_all["label"].fillna("")
+    o_slots_all = with_date(pd.read_csv(GOLD / "outlook_slots.csv", parse_dates=["slot_ts"]), "slot_ts")
+    o_tl_all = with_date(pd.read_csv(GOLD / "outlook_timeline.csv", parse_dates=["slot_ts"]), "slot_ts")
+    o_sc_all = with_date(pd.read_csv(GOLD / "outlook_slot_corridor.csv", parse_dates=["slot_ts"]), "slot_ts")
     bt_all = pd.read_csv(GOLD / "model_backtest.csv")
 
     for legacy in ["days.json", "model.json"]:            # single-location layout from before
@@ -92,6 +97,22 @@ def main():
                 "corridors": rows(sc.loc[sc["_d"] == d, CORRIDOR_COLS]),
             }, OUT / k / "day" / f"{d}.json")
         dump(rows(days[DAY_COLS]), OUT / k / "days.json")
+
+        # outlook (future) days: the day list plus the outlook demo days
+        o_days = o_days_all[o_days_all["poi"] == k]
+        dump(rows(o_days[DAY_COLS + ["method"]]), OUT / k / "outlook_days.json")
+        o_slots, o_tl, o_sc = (o_slots_all[o_slots_all["poi"] == k], o_tl_all[o_tl_all["poi"] == k], o_sc_all[o_sc_all["poi"] == k])
+        for d, _ in poi.get("outlook_presets", []):
+            day = o_days[o_days["date"] == d]
+            if day.empty:
+                continue
+            dump({
+                "future": True,
+                "day": rows(day[DAY_COLS + ["method", "analog_dates"]])[0],
+                "slots": rows(o_slots.loc[o_slots["_d"] == d, SLOT_COLS]),
+                "timeline": rows(o_tl.loc[o_tl["_d"] == d, TIMELINE_COLS]),
+                "corridors": rows(o_sc.loc[o_sc["_d"] == d, CORRIDOR_COLS]),
+            }, OUT / k / "day" / f"{d}.json")
         dump({"kernel": rows(kernel_all[kernel_all["poi"] == k][["k", "p", "cum_p"]]),
               "backtest": rows(bt_all[bt_all["poi"] == k][["horizon", "model", "target", "r2", "mae", "n"]])},
              OUT / k / "model.json")

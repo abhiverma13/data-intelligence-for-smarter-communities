@@ -216,7 +216,7 @@ window.FlowGuardMap = (function () {
     sev.sort((a, b) => a[0] - b[0]).forEach(([, R]) => { R.casing.bringToFront(); R.line.bringToFront(); });  // worst on top
 
     const p = day.slots[t];
-    kpiEl.innerHTML = `<div class="caption">${esc(day.poi.name)} now</div><div><b>${p && p.pressure != null ? p.pressure.toFixed(1) + "×" : "–"}</b> × normal occupancy</div>`;
+    kpiEl.innerHTML = `<div class="caption">${esc(day.poi.name)} ${day.future ? "expected" : "now"}</div><div><b>${p && p.pressure != null ? p.pressure.toFixed(1) + "×" : "–"}</b> × normal occupancy</div>`;
   }
 
   function render(fg) {
