@@ -30,10 +30,25 @@ Attach **Serverless**, run cells one at a time (no "Run all").
 
 | Notebook | Produces |
 |---|---|
-| `00_config` | shared settings, loaded by every notebook via `%run ./00_config` |
+| `00_config` | shared settings + helpers, loaded by every notebook via `%run ./00_config` |
 | `01_setup_uc` | catalog, schemas, `raw` Volume, `bronze.ref_*` tables |
 | `02_bronze` | `bronze.pr_raw`, `bronze.gtfs_*` |
 | `03_silver` | `silver.pr_visits` + data quality checks |
+| `04_gold_slots` | `gold.pr_slots`, `gold.pr_slot_corridor`, `gold.pr_days` |
+| `05_egress_model` | `gold.egress_kernel`, `gold.egress_forecast`, `gold.model_backtest` + MLflow run |
+| `06_gtfs_service` | `silver.gtfs_parkroyal_departures`, `gold.gtfs_service_30min` |
+| `07_timeline` | `gold.flowguard_timeline` (the table the app reads) |
+
+All thresholds live in `pipeline/fg_settings.py` and all formulas in `pipeline/fg_core.py` (plain Python,
+imported by the notebooks and by `local/run_local.py`, so Databricks and local runs give identical numbers).
+Verified numbers for the pitch: [docs/data_findings.md](docs/data_findings.md).
+
+## Local run
+
+```
+python flowguard/local/run_local.py      # builds every gold table to flowguard/local/data/gold/*.csv
+```
+Set `FLOWGUARD_PR_CSV` if the Park Royal CSV isn't in `~/Downloads/OneDrive_1_2026-09-25/`.
 
 If `CREATE CATALOG` isn't permitted, everything falls back to the `workspace` catalog with
 `flowguard_bronze / flowguard_silver / flowguard_gold` schemas automatically.

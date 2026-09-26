@@ -31,27 +31,11 @@ print(f"✅ Schemas {BRONZE}, {SILVER}, {GOLD} and volume {RAW_VOLUME} are ready
 
 # COMMAND ----------
 
-# DBTITLE 1,Load config CSVs → bronze.ref_* tables
-import pandas as pd
-
-
-def load_ref(csv_name: str, table: str, columns: list, casts: dict, comment: str):
-    pdf = pd.read_csv(os.path.join(CONFIG_DIR, csv_name), dtype=str, keep_default_na=False)
-    missing = set(columns) - set(pdf.columns)
-    assert not missing, f"{csv_name} is missing columns {missing}"
-    rows = [tuple(r) for r in pdf[columns].itertuples(index=False)]
-    df = spark.createDataFrame(rows, ", ".join(f"{c} STRING" for c in columns))
-    df = df.selectExpr(*[casts.get(c, c) for c in columns])
-    full = f"{BRONZE}.{table}"
-    df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(full)
-    spark.sql(f"COMMENT ON TABLE {full} IS '{comment}'")
-    print(f"✅ {full}: {df.count()} rows")
-
-
+# DBTITLE 1,Load config CSVs → bronze.ref_* tables (load_ref is defined in 00_config)
 load_ref("origin_corridor.csv", "ref_origin_corridor", ["origin", "corridor"], {},
          "Device home origin → outbound demand corridor (proxy for direction, not individual destination)")
-load_ref("route_group_overrides.csv", "ref_route_group_override", ["route_short_name", "route_group", "note"], {},
-         "Manual GTFS route → route group fixes applied after the keyword rules")
+load_ref("route_group_overrides.csv", "ref_route_group_override", ["trip_headsign", "route_group", "note"], {},
+         "Manual GTFS trip headsign → route group fixes; beat the keyword rules in fg_settings.ROUTE_GROUP_RULES")
 load_ref("day_type_overrides.csv", "ref_day_type", ["date", "service_day_type", "label", "note"],
          {"date": "CAST(date AS DATE) AS date"},
          "Holiday dates → TransLink service day type, plus day labels for the day picker")
