@@ -32,7 +32,7 @@ def warm_cache():
         for poi in logic.POIS:
             k = poi["key"]
             jobs = [("days", lambda k=k: cache.days(k)), ("model", lambda k=k: cache.model(k))] + [
-                (d, lambda k=k, d=d: cache.day(k, d)) for d, _ in poi["presets"]]
+                (d, lambda k=k, d=d: cache.day(k, d)) for d, _ in poi["presets"] + poi.get("outlook_presets", [])]
             for name, fn in jobs:
                 try:
                     fn()

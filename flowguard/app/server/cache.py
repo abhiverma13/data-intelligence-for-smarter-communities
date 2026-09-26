@@ -60,10 +60,16 @@ def days(poi: str) -> Dict[str, Any]:
 
     def live():
         from . import queries
-        return logic.days_payload(P, queries.days(poi))
+        past = queries.days(poi)
+        try:
+            future = queries.outlook_days(poi)
+        except Exception as e:  # noqa: BLE001 — outlook tables not built yet: past days only
+            log.warning("outlook days for %s unavailable (%s)", poi, type(e).__name__)
+            future = []
+        return logic.days_payload(P, past, future)
 
     def snap():
-        return logic.days_payload(P, _read(poi, "days.json"), available=snapshot_dates(poi))
+        return logic.days_payload(P, _read(poi, "days.json"), _read(poi, "outlook_days.json"), available=snapshot_dates(poi))
 
     return _get(f"days:{poi}", live, snap)
 
@@ -85,7 +91,8 @@ def day(poi: str, date: str) -> Dict[str, Any]:
     P = logic.POI_BY_KEY[poi]
 
     def build(raw):
-        return logic.day_payload(P, raw["day"], raw["slots"], raw["timeline"], raw["forecast_all"], raw["corridors"])
+        return logic.day_payload(P, raw["day"], raw["slots"], raw["timeline"], raw.get("forecast_all", []), raw["corridors"],
+                                 future=bool(raw.get("future")))
 
     def live():
         from . import queries

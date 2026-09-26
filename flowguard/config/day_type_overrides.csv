@@ -10,3 +10,12 @@ date,service_day_type,label,note
 2026-05-18,SUNDAY_HOLIDAY,Victoria Day,BC stat holiday
 2026-07-01,SUNDAY_HOLIDAY,Canada Day,BC stat holiday
 2026-08-03,SUNDAY_HOLIDAY,BC Day,BC stat holiday
+2026-09-07,SUNDAY_HOLIDAY,Labour Day,BC stat holiday (outlook)
+2026-09-30,WEEKDAY,Truth and Reconciliation Day,BC stat holiday; TransLink runs regular service (verify)
+2026-10-12,SUNDAY_HOLIDAY,Thanksgiving,BC stat holiday (outlook)
+2026-11-11,SUNDAY_HOLIDAY,Remembrance Day,BC stat holiday (outlook)
+2026-12-24,WEEKDAY,Christmas Eve,label only (outlook)
+2026-12-25,SUNDAY_HOLIDAY,Christmas Day,BC stat holiday (outlook)
+2026-12-26,SUNDAY_HOLIDAY,Boxing Day,VERIFY against TransLink holiday service notice (outlook)
+2026-12-31,WEEKDAY,New Year's Eve,label only (outlook)
+2027-01-01,SUNDAY_HOLIDAY,New Year's Day,BC stat holiday (outlook)

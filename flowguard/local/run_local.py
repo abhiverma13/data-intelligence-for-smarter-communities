@@ -79,6 +79,8 @@ def run_poi(poi: dict, gtfs: dict, last, ref_day, overrides_all) -> dict:
                                         dict(zip(ov["trip_headsign"], ov["route_group"])), poi)
     service = C.service_30min(departures, gtfs["calendar"], gtfs["calendar_dates"], poi)
     timeline, typical_load = C.build_timeline(slots, slot_corridor, forecast, service, days, poi)
+    o_days, o_slots, o_corr, o_tl = C.build_outlook(slots, slot_corridor, timeline, days, departures,
+                                                   gtfs["calendar"], gtfs["calendar_dates"], ref_day, poi)
 
     bt = backtest.pivot_table(index="model", columns="horizon", values="r2").round(3)
     print("== backtest R2\n" + bt.to_string())
@@ -98,7 +100,8 @@ def run_poi(poi: dict, gtfs: dict, last, ref_day, overrides_all) -> dict:
         print(t.groupby("route_group")["readiness_h2"].value_counts().unstack(fill_value=0).to_string())
     return {"slots": slots, "slot_corridor": slot_corridor, "days": days, "egress_kernel": kernel,
             "egress_forecast": forecast, "model_backtest": backtest, "transit_departures": departures,
-            "transit_stops": near, "transit_service_30min": service, "flowguard_timeline": timeline}
+            "transit_stops": near, "transit_service_30min": service, "flowguard_timeline": timeline,
+            "outlook_days": o_days, "outlook_slots": o_slots, "outlook_slot_corridor": o_corr, "outlook_timeline": o_tl}
 
 
 def main():

@@ -1,0 +1,96 @@
+{
+  "job_id": 744392775638066,
+  "new_settings": {
+    "name": "flowguard-refresh",
+    "description": "Rebuilds FlowGuard end to end for Park Royal, UBC and Waterfront: Unity Catalog setup, bronze, silver, gold slots, egress model (MLflow), GTFS service, readiness timeline, future-date outlook.",
+    "max_concurrent_runs": 1,
+    "tasks": [
+      {
+        "task_key": "setup_uc",
+        "notebook_task": {
+          "notebook_path": "/Workspace/Users/a.verma1304@gmail.com/data-intelligence-for-smarter-communities/flowguard/pipeline/01_setup_uc"
+        }
+      },
+      {
+        "task_key": "bronze",
+        "depends_on": [
+          {
+            "task_key": "setup_uc"
+          }
+        ],
+        "notebook_task": {
+          "notebook_path": "/Workspace/Users/a.verma1304@gmail.com/data-intelligence-for-smarter-communities/flowguard/pipeline/02_bronze"
+        }
+      },
+      {
+        "task_key": "silver",
+        "depends_on": [
+          {
+            "task_key": "bronze"
+          }
+        ],
+        "notebook_task": {
+          "notebook_path": "/Workspace/Users/a.verma1304@gmail.com/data-intelligence-for-smarter-communities/flowguard/pipeline/03_silver"
+        }
+      },
+      {
+        "task_key": "gold_slots",
+        "depends_on": [
+          {
+            "task_key": "silver"
+          }
+        ],
+        "notebook_task": {
+          "notebook_path": "/Workspace/Users/a.verma1304@gmail.com/data-intelligence-for-smarter-communities/flowguard/pipeline/04_gold_slots"
+        }
+      },
+      {
+        "task_key": "egress_model",
+        "depends_on": [
+          {
+            "task_key": "gold_slots"
+          }
+        ],
+        "notebook_task": {
+          "notebook_path": "/Workspace/Users/a.verma1304@gmail.com/data-intelligence-for-smarter-communities/flowguard/pipeline/05_egress_model"
+        }
+      },
+      {
+        "task_key": "gtfs_service",
+        "depends_on": [
+          {
+            "task_key": "bronze"
+          }
+        ],
+        "notebook_task": {
+          "notebook_path": "/Workspace/Users/a.verma1304@gmail.com/data-intelligence-for-smarter-communities/flowguard/pipeline/06_gtfs_service"
+        }
+      },
+      {
+        "task_key": "timeline",
+        "depends_on": [
+          {
+            "task_key": "egress_model"
+          },
+          {
+            "task_key": "gtfs_service"
+          }
+        ],
+        "notebook_task": {
+          "notebook_path": "/Workspace/Users/a.verma1304@gmail.com/data-intelligence-for-smarter-communities/flowguard/pipeline/07_timeline"
+        }
+      },
+      {
+        "task_key": "outlook",
+        "depends_on": [
+          {
+            "task_key": "timeline"
+          }
+        ],
+        "notebook_task": {
+          "notebook_path": "/Workspace/Users/a.verma1304@gmail.com/data-intelligence-for-smarter-communities/flowguard/pipeline/08_outlook"
+        }
+      }
+    ]
+  }
+}

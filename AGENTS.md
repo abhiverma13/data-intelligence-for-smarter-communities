@@ -68,6 +68,10 @@ flowguard/
   Park Royal this equals the trip count.
 - The forecast scales not-yet-arrived typical arrivals by today's trailing-2 h busyness (`TODAY_SCALING`).
   The spec formula is kept as `egress_static` in the backtest.
+- **Outlook days** (future, `08_outlook`, `fg_core.build_outlook`): Sep 7 2026 – Jan 3 2027 = the window the GTFS
+  feed covers. Crowd = median of analog past days (same holiday last year → same week last year ±1 → typical weekday);
+  service = the published schedule of that exact date (`service_for_date`). The UI marks them with a violet
+  OUTLOOK badge, a dashed explainer bar and dashed card borders; never present them as observed data.
 - Occupancy excludes stays over 24 h. "No service" is shown when nothing is scheduled. Route groups are never
   escalated below half the usual daytime demand.
 

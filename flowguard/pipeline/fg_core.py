@@ -528,3 +528,141 @@ def _action(r, group: dict):
             f"Expected {label.lower()} exit demand per unit of scheduled service is {peak:.1f}× a normal {day} "
             f"on the {day} schedule. {levers}.")
     return text, float(peak)
+
+
+# ---------------------------------------------------------------- 08: outlook for future dates
+def outlook_analogs(date: pd.Timestamp, days: pd.DataFrame, ref_day: pd.DataFrame) -> tuple[list, str]:
+    """Past days that stand in for a future date, and a human-readable method:
+    1. a holiday -> the same holiday last year; 2. else the same weekday 52 weeks earlier
+    (+/- OUTLOOK_ANALOG_WEEKS); 3. else (no year-ago data) the typical same weekday in the training
+    period. Holidays never stand in for ordinary days."""
+    past = list(pd.to_datetime(days["date"]))
+    labels = ref_day.assign(date=pd.to_datetime(ref_day["date"])).set_index("date")["label"]
+    holidays = set(labels.index)
+    lbl = labels.get(date)
+    if lbl is not None:
+        same = [d for d in past if labels.get(d) == lbl and d < date]
+        if same:
+            return [max(same)], f"{lbl}: based on {lbl} {max(same):%Y}"
+    ordinary = set(past) - holidays
+    near = [date - pd.Timedelta(weeks=52 + k) for k in range(-S.OUTLOOK_ANALOG_WEEKS, S.OUTLOOK_ANALOG_WEEKS + 1)]
+    near = [d for d in near if d in ordinary]
+    if len(near) == 1:
+        return near, f"Based on the same day last year ({near[0]:%a %b %d, %Y})"
+    if near:
+        return near, f"Based on the same week last year ({min(near):%b %d}–{max(near):%b %d, %Y})"
+    train = [d for d in ordinary if d.dayofweek == date.dayofweek and d < pd.Timestamp(S.TRAIN_END)]
+    return train, f"Based on a typical {date:%A} (Nov 2025–Jun 2026)"
+
+
+def service_for_date(departures: pd.DataFrame, calendar, calendar_dates, date, poi: dict) -> np.ndarray:
+    """Scheduled capacity (bus-equivalents) per slot_of_day × route group on one actual calendar date."""
+    groups = S.groups(poi)
+    hh = departures["departure_time"].str.split(":", expand=True).astype(int)
+    d = departures.assign(slot_of_day=(hh[0] * 2 + hh[1] // 30) % S.SLOTS_PER_DAY)
+    d = d[d["route_group"].isin(groups) & d["service_id"].isin(active_services(date, calendar, calendar_dates))]
+    m = d.pivot_table(index="slot_of_day", columns="route_group", values="capacity", aggfunc="sum")
+    return m.reindex(index=range(S.SLOTS_PER_DAY), columns=groups).fillna(0).to_numpy()
+
+
+def build_outlook(slots, slot_corridor, timeline, days, departures, calendar, calendar_dates, ref_day, poi: dict):
+    """Expected conditions for future dates (OUTLOOK_START..OUTLOOK_END): analog past days (see
+    outlook_analogs) for the crowd, and the actual published TransLink schedule of each date for service.
+    Returns (outlook_days, outlook_slots, outlook_slot_corridor, outlook_timeline) shaped like the past tables."""
+    groups, gcorr = S.groups(poi), S.group_corridors(poi)
+    corridors = S.corridors(poi)
+    dates = pd.date_range(S.OUTLOOK_START, S.OUTLOOK_END, freq="D")
+    grid = pd.date_range(dates[0], dates[-1] + pd.Timedelta(days=1) - SLOT, freq=f"{S.SLOT_MINUTES}min")
+    n = len(grid)
+    sod = slot_of_day(grid)
+    sdt_arr, _ = service_day_types(grid, ref_day)
+    slots = slots.assign(date=pd.to_datetime(slots["date"]))
+    sc = slot_corridor.assign(date=pd.to_datetime(slot_corridor["slot_ts"]).dt.normalize(),
+                              slot_of_day=slot_of_day(slot_corridor["slot_ts"]))
+    num_cols = ["arrivals", "departures", "occupancy", "baseline_occ", "pressure", "baseline_arrivals", "baseline_departures",
+                "median_dwell", "local_share", "baseline_local_share", "regional_share", "baseline_regional_share",
+                "trailing_dwell", "stay_ratio", "visitor_ratio"]
+    corr_idx = pd.MultiIndex.from_product([corridors, range(S.SLOTS_PER_DAY)], names=["corridor", "slot_of_day"])
+    past_ratio = days.assign(date=pd.to_datetime(days["date"])).set_index("date")["surge_ratio"]
+
+    out_slots, out_corr, out_days = [], [], []
+    for date in dates:
+        analogs, method = outlook_analogs(date, days, ref_day)
+        ts = pd.date_range(date, periods=S.SLOTS_PER_DAY, freq=f"{S.SLOT_MINUTES}min")
+        a = slots[slots["date"].isin(analogs)].groupby("slot_of_day")[num_cols].median().reindex(range(S.SLOTS_PER_DAY))
+        out_slots.append(a.reset_index().assign(poi=poi["key"], slot_ts=ts, date=date, day_type=S.DAY_TYPES[date.dayofweek]))
+        c = (sc[sc["date"].isin(analogs)].groupby(["corridor", "slot_of_day"])[["departures", "baseline_departures", "share", "baseline_share"]]
+             .median().reindex(corr_idx).reset_index())
+        c["slot_ts"] = ts[c["slot_of_day"].to_numpy()]
+        c["poi"] = poi["key"]
+        out_corr.append(c)
+        shown = sorted(analogs)
+        out_days.append({"poi": poi["key"], "date": date, "day_type": S.DAY_TYPES[date.dayofweek], "method": method,
+                         "analog_dates": ", ".join(f"{d:%Y-%m-%d}" for d in shown[:6]) + (" …" if len(shown) > 6 else ""),
+                         "surge_ratio": float(past_ratio.reindex(shown).median())})
+    o_slots = pd.concat(out_slots, ignore_index=True).sort_values("slot_ts").reset_index(drop=True)
+    o_slots["service_day_type"] = sdt_arr
+    o_slots["pressure_level"] = [level(p, S.PRESSURE_LEVELS) for p in o_slots["pressure"]]
+    o_slots["signature"] = [signature(p, r, br, st, v) for p, r, br, st, v in zip(
+        o_slots["pressure"], o_slots["regional_share"], o_slots["baseline_regional_share"], o_slots["stay_ratio"], o_slots["visitor_ratio"])]
+    o_corr = pd.concat(out_corr, ignore_index=True)
+
+    # days: expected surge ratio = median surge ratio of the analog days (each vs its own normal)
+    o_days = pd.DataFrame(out_days)
+    o_days["arrivals"] = o_slots.groupby("date")["arrivals"].sum().reindex(o_days["date"]).to_numpy()
+    o_days["is_surge"] = o_days["surge_ratio"] >= poi.get("surge_threshold", S.SURGE_RATIO_THRESHOLD)
+    o_days["service_day_type"], lbl = service_day_types(pd.DatetimeIndex(o_days["date"]), ref_day)
+    o_days["label"] = [x if x else ("Expected surge" if s else "") for x, s in zip(lbl, o_days["is_surge"])]
+    lo, hi = S.PEAK_WINDOW_SLOTS
+    win = o_slots[(o_slots["slot_of_day"] >= lo) & (o_slots["slot_of_day"] < hi)]
+    peak = win.loc[win.groupby("date")["pressure"].idxmax()]
+    o_days["peak_pressure"] = peak["pressure"].to_numpy()
+    o_days["peak_pressure_slot"] = peak["slot_ts"].to_numpy()
+
+    # readiness: composite exits vs the actual published schedule of each date
+    svc = np.concatenate([service_for_date(departures, calendar, calendar_dates, d, poi) for d in dates])
+    smooth = sum(np.roll(svc, -k, axis=0) for k in range(S.SERVICE_SMOOTH_SLOTS)) / S.SERVICE_SMOOTH_SLOTS
+    dep = o_corr.pivot_table(index="slot_ts", columns="corridor", values="departures").reindex(index=grid, columns=corridors)
+    base = o_corr.pivot_table(index="slot_ts", columns="corridor", values="baseline_departures").reindex(index=grid, columns=corridors)
+    typ_load = timeline.groupby(["route_group", "service_day_type"])["typical_load"].median()
+    typ_dem = timeline.groupby("route_group")["typical_demand"].first()
+    gi = {g: i for i, g in enumerate(groups)}
+
+    frames = []
+    for g in groups:
+        cs = gcorr[g]
+        dem_all = dep[cs].sum(axis=1, min_count=1).to_numpy()
+        usual_all = _floor(base[cs].sum(axis=1).to_numpy(float), S.BASELINE_OCC_FLOOR_SHARE)
+        t = pd.DataFrame({
+            "poi": poi["key"], "slot_ts": grid, "date": grid.normalize(), "slot_of_day": sod,
+            "day_type": np.array(S.DAY_TYPES)[grid.dayofweek], "service_day_type": sdt_arr, "route_group": g,
+            "pressure": o_slots["pressure"].to_numpy(), "pressure_level": o_slots["pressure_level"].to_numpy(),
+            "signature": o_slots["signature"].to_numpy(),
+        })
+        tl_arr = np.array([typ_load.get((g, s), np.nan) for s in sdt_arr])
+        for h in S.HORIZONS:
+            idx = np.arange(n) + h
+            valid = idx < n
+            tgt = np.minimum(idx, n - 1)
+            dem = np.where(valid, dem_all[tgt], np.nan)
+            s_ = smooth[tgt, gi[g]]
+            gap = dem / np.maximum(s_, 0.5) / tl_arr[tgt]
+            no_service = s_ <= 0
+            gap[no_service] = np.nan
+            quiet = dem < S.MIN_DEMAND_SHARE * typ_dem[g]
+            t[f"dep_hat_h{h}"] = dem
+            t[f"demand_idx_h{h}"] = dem / usual_all[tgt]
+            t[f"actual_h{h}"] = np.nan
+            t[f"svc_h{h}"] = s_
+            t[f"gap_h{h}"] = gap
+            t[f"readiness_h{h}"] = ["No service" if ns else "Prepared" if q else level(x, S.READINESS_LEVELS)
+                                    for x, ns, q in zip(gap, no_service, quiet)]
+        t["typical_load"] = tl_arr
+        t["typical_demand"] = typ_dem[g]
+        frames.append(t)
+    o_tl = pd.concat(frames, ignore_index=True)
+    by_key = {g["key"]: g for g in poi["groups"]}
+    actions = [_action(r, by_key[r.route_group]) for r in o_tl.itertuples(index=False)]
+    o_tl["action_text"] = [a for a, _ in actions]
+    o_tl["action_priority"] = pd.to_numeric(pd.Series([p for _, p in actions], dtype="float64"))
+    return o_days, o_slots, o_corr, o_tl

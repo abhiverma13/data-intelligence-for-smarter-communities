@@ -55,7 +55,11 @@ TYPICAL_LOAD_SLOTS = (20, 40)          # 10:00–20:00 daytime window for typica
 # ---------- GTFS / transit readiness ----------
 # One representative service date per day type, inside the current feed (Sept 7 2026 → Jan 3 2027).
 SERVICE_REP_DATES = {"WEEKDAY": "2026-10-14", "SATURDAY": "2026-10-17", "SUNDAY_HOLIDAY": "2026-10-18"}
-MIN_DEMAND_SHARE = 0.5                 # below half the usual daytime demand a route group is never escalated
+# Outlook (future days): the dates the published GTFS feed covers, after the mobility data ends.
+OUTLOOK_START = "2026-09-07"
+OUTLOOK_END = "2027-01-03"
+OUTLOOK_ANALOG_WEEKS = 1               # same weekday last year ±1 week (3 analog days)
+MIN_DEMAND_SHARE = 0.5                # below half the usual daytime demand a route group is never escalated
 SERVICE_SMOOTH_SLOTS = 2               # svc = mean capacity over the slot and the next one (60-min window)
 
 

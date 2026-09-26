@@ -48,7 +48,12 @@
         ["2026-08-15", "August Saturday (holdout)"]
       ],
       "default_date": "2026-04-25",
-      "replay_start": "10:00"
+      "replay_start": "10:00",
+      "outlook_presets": [
+        ["2026-12-26", "Boxing Day 2026 (outlook)"],
+        ["2026-12-18", "Pre-Christmas Friday (outlook)"],
+        ["2026-10-17", "October Saturday (outlook)"]
+      ]
     },
     {
       "key": "ubc",
@@ -99,7 +104,11 @@
         ["2026-07-15", "Summer Wednesday (holdout)"]
       ],
       "default_date": "2026-02-04",
-      "replay_start": "10:00"
+      "replay_start": "10:00",
+      "outlook_presets": [
+        ["2026-11-24", "Exam-season Tuesday (outlook)"],
+        ["2026-09-09", "First week of term (outlook)"]
+      ]
     },
     {
       "key": "waterfront",
@@ -157,7 +166,11 @@
         ["2026-07-25", "July Saturday (holdout)"]
       ],
       "default_date": "2026-03-25",
-      "replay_start": "08:30"
+      "replay_start": "08:30",
+      "outlook_presets": [
+        ["2026-11-27", "Late-November Friday (outlook)"],
+        ["2026-12-26", "Boxing Day 2026 (outlook)"]
+      ]
     }
   ],
   "capacity_bus_equivalents": {

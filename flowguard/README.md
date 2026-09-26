@@ -38,6 +38,7 @@ Attach **Serverless**, run cells one at a time (no "Run all").
 | `05_egress_model` | `gold.egress_kernel`, `gold.egress_forecast`, `gold.model_backtest` + one MLflow run per POI |
 | `06_gtfs_service` | `silver.transit_stops`, `silver.transit_departures`, `gold.transit_service_30min` |
 | `07_timeline` | `gold.flowguard_timeline` (the table the app reads) |
+| `08_outlook` | `gold.outlook_days`, `gold.outlook_slots`, `gold.outlook_slot_corridor`, `gold.outlook_timeline`: expected conditions for future days (Sep 7 2026 – Jan 3 2027) |
 
 Every table has a `poi` column: `park_royal`, `ubc`, `waterfront`. Each point of interest (raw file,
 coordinates, stop radius, corridors, route groups and their headsign rules, operator levers, demo days,

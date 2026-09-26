@@ -41,6 +41,7 @@
           <span id="clock">09:00</span>
           <span id="clockDate"></span>
         </div>
+        <span id="outlookBadge" class="outlook-badge" hidden>Outlook</span>
       </div>
 
       <button id="labBtn" class="btn">Scenario Lab</button>
@@ -51,7 +52,13 @@
     </div>
   </header>
 
+  <div id="outlookBar" class="outlook-bar" hidden></div>
   <div id="banner" class="banner" hidden></div>
+
+  <div id="loader" class="loader" hidden role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <div id="loaderText">Loading…</div>
+  </div>
 
   <main class="layout" id="main">
     <section class="col-side">
@@ -83,9 +90,10 @@
         <div class="card-head">
           <h2>Transit pressure radar <span class="h2-sub">exit wave, index: normal-day peak = 100</span></h2>
           <ul class="legend" id="radarLegend">
-            <li><span class="sw sw-actual"></span>Actual exits</li>
+            <li class="hist-only"><span class="sw sw-actual"></span>Actual exits</li>
+            <li class="outlook-only"><span class="sw sw-expected"></span>Expected exits (outlook)</li>
             <li><span class="sw sw-forecast"></span>Forecast from now</li>
-            <li><span class="sw sw-earlier"></span>Forecast made 60 min earlier</li>
+            <li class="hist-only"><span class="sw sw-earlier"></span>Forecast made 60 min earlier</li>
             <li><span class="sw sw-usual"></span>Normal day</li>
           </ul>
         </div>

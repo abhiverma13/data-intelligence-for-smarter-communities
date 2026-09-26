@@ -16,6 +16,7 @@ HORIZONS = [1, 2, 3, 4]
 PRESSURE_LEVELS = [[1.3, "Normal"], [1.8, "Elevated"], [2.5, "High"], [None, "Severe"]]
 READINESS_LEVELS = [[1.2, "Prepared"], [1.7, "Watch"], [2.3, "Strained"], [None, "Critical"]]
 MIN_DEMAND_SHARE = 0.5
+OUTLOOK_START = "2026-09-07"          # future days (outlook) start here; mirrors fg_settings.OUTLOOK_START
 SERVICE_LABELS = {"WEEKDAY": "weekday", "SATURDAY": "Saturday", "SUNDAY_HOLIDAY": "Sunday/holiday"}
 
 with open(Path(__file__).with_name("pois.json"), encoding="utf-8") as _f:
@@ -53,25 +54,41 @@ def slot_index(ts: str) -> int:
     return int(t[:2]) * 2 + int(t[3:]) // SLOT_MINUTES
 
 
+def is_future(date: str) -> bool:
+    return str(date)[:10] >= OUTLOOK_START
+
+
 def pois_payload() -> List[Dict[str, Any]]:
     return [{"key": p["key"], "name": p["name"], "full_name": p["full_name"]} for p in POIS]
 
 
-def days_payload(poi: Dict[str, Any], day_rows: List[Dict[str, Any]], available: set | None = None) -> Dict[str, Any]:
-    by_date = {str(r["date"])[:10]: r for r in day_rows}
-    labels = dict(poi["presets"])
+def days_payload(poi: Dict[str, Any], day_rows: List[Dict[str, Any]], outlook_rows: List[Dict[str, Any]],
+                 available: set | None = None) -> Dict[str, Any]:
+    """Past days (in the data) and future outlook days, each with their demo presets first."""
+    labels = dict(poi["presets"]) | dict(poi.get("outlook_presets", []))
+    keep = (lambda d: d in available) if available is not None else (lambda d: True)
 
-    def item(d, r):
-        return {
+    def item(d, r, future):
+        it = {
             "date": d, "label": labels.get(d) or r.get("label") or "", "day_type": r["day_type"],
-            "surge_ratio": clean(float(r["surge_ratio"])), "is_surge": bool(r["is_surge"]),
+            "surge_ratio": clean(float(r["surge_ratio"])) if r.get("surge_ratio") is not None else None,
+            "is_surge": bool(r["is_surge"]), "future": future,
             "peak_pressure": clean(float(r["peak_pressure"])) if r.get("peak_pressure") is not None else None,
         }
+        if future:
+            it["method"] = r.get("method") or ""
+        return it
 
-    keep = (lambda d: d in available) if available is not None else (lambda d: True)
-    presets = [item(d, by_date[d]) for d, _ in poi["presets"] if d in by_date and keep(d)]
-    rest = [item(d, r) for d, r in sorted(by_date.items()) if keep(d)]
-    return {"poi": poi["key"], "presets": presets, "days": rest, "default_date": poi.get("default_date") or ""}
+    def block(rows, presets, future):
+        by_date = {str(r["date"])[:10]: r for r in rows}
+        pre = [item(d, by_date[d], future) for d, _ in presets if d in by_date and keep(d)]
+        rest = [item(d, r, future) for d, r in sorted(by_date.items()) if keep(d)]
+        return pre, rest
+
+    presets, days = block(day_rows, poi["presets"], False)
+    outlook_presets, future = block(outlook_rows, poi.get("outlook_presets", []), True)
+    return {"poi": poi["key"], "presets": presets, "days": days, "outlook_presets": outlook_presets,
+            "future": future, "default_date": poi.get("default_date") or "", "outlook_start": OUTLOOK_START}
 
 
 def model_payload(kernel: List[Dict[str, Any]], backtest: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -82,7 +99,9 @@ def model_payload(kernel: List[Dict[str, Any]], backtest: List[Dict[str, Any]]) 
 
 
 def day_payload(poi: Dict[str, Any], day: Dict[str, Any], slots: List[Dict[str, Any]], timeline: List[Dict[str, Any]],
-                forecast_all: List[Dict[str, Any]], corridors: List[Dict[str, Any]]) -> Dict[str, Any]:
+                forecast_all: List[Dict[str, Any]], corridors: List[Dict[str, Any]], future: bool = False) -> Dict[str, Any]:
+    """One day for the console. For a future (outlook) day there is no actual data: the exit wave is the
+    expected curve, and the forecast from now reads it +30 to +120 min ahead."""
     slots = sorted(slots, key=lambda r: int(r["slot_of_day"]))
     n = len(slots)
     ckeys = [c["key"] for c in poi["corridors"]]
@@ -110,11 +129,19 @@ def day_payload(poi: Dict[str, Any], day: Dict[str, Any], slots: List[Dict[str, 
 
     usual = [clean(float(r["baseline_departures"])) for r in slots]
     fc = [[None] * len(HORIZONS) for _ in range(n)]
-    for r in forecast_all:
-        fc[slot_index(r["origin_slot_ts"])][int(r["horizon"]) - 1] = clean(float(r["dep_hat"]))
+    expected = None
+    if future:
+        expected = [clean(r["departures"]) for r in slots]
+        for i in range(n):
+            for k, h in enumerate(HORIZONS):
+                fc[i][k] = expected[i + h] if i + h < n else None
+    else:
+        for r in forecast_all:
+            fc[slot_index(r["origin_slot_ts"])][int(r["horizon"]) - 1] = clean(float(r["dep_hat"]))
     exit_wave = {
         "normal_peak": max(u for u in usual if u is not None),
-        "actual": [int(r["departures"]) for r in slots],
+        "actual": None if future else [int(r["departures"]) for r in slots],
+        "expected": expected,
         "usual": usual,
         "forecast": fc,
     }
@@ -145,7 +172,10 @@ def day_payload(poi: Dict[str, Any], day: Dict[str, Any], slots: List[Dict[str, 
         "poi": {"key": poi["key"], "name": poi["name"], "full_name": poi["full_name"], "hub": poi["hub"],
                 "catchment_kpi": poi["catchment_kpi"], "replay_start": poi.get("replay_start", "10:00")},
         "date": d,
-        "label": dict(poi["presets"]).get(d) or day.get("label") or "",
+        "label": (dict(poi["presets"]) | dict(poi.get("outlook_presets", []))).get(d) or day.get("label") or "",
+        "future": future,
+        "method": day.get("method") if future else None,
+        "analog_dates": day.get("analog_dates") if future else None,
         "day_type": day["day_type"],
         "service_day_type": day["service_day_type"],
         "service_label": SERVICE_LABELS.get(day["service_day_type"], day["service_day_type"]),
