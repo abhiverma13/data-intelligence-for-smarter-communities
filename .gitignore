@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.local
+
+# Node
+node_modules/
+frontend/node_modules
+*.log
+npm-debug.log*
+
+# Databricks
+.databricks/
+.databricks-*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Build artifacts
+build/
+dist/
+*.tsbuildinfo
+
+# Local secrets / credentials
+*conf*.json
+*.pem
+*.key
+credentials.json
+.databrickscfg
+
+# FlowGuard: raw data stays local / in the Databricks Volume
+flowguard/local/data/
+*.env
+*.zip
