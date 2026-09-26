@@ -12,9 +12,9 @@ env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse   # the app resource named "sql-warehouse" (see flowguard/deploy/app.json)
   - name: CATALOG
-    value: "flowguard"
+    value: "workspace"
   - name: SCHEMA
-    value: "gold"
+    value: "flowguard_gold"
   - name: GENIE_SPACE_ID
     value: ""                  # stretch: Genie space id from its URL (/genie/rooms/<id>)
   - name: DATA_MODE

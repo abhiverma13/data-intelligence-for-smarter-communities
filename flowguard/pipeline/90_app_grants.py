@@ -15,7 +15,7 @@
 
 from databricks.sdk import WorkspaceClient
 
-APP_NAME = "flowguard"
+APP_NAME = "flowguard-harsha"
 GENIE_SPACE_ID = ""   # stretch: paste the Genie space id here, then re-run
 
 w = WorkspaceClient()

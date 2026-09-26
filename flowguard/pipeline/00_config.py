@@ -30,11 +30,15 @@ FALLBACK_CATALOG = "workspace"          # Free Edition default catalog
 FALLBACK_SCHEMA_PREFIX = "flowguard_"
 
 
-def _catalog_exists(name: str) -> bool:
-    return spark.sql(f"SHOW CATALOGS LIKE '{name}'").count() > 0
+def _catalog_usable(name: str) -> bool:
+    try:
+        spark.sql(f"USE CATALOG `{name}`")
+        return True
+    except Exception:
+        return False
 
 
-if _catalog_exists(PREFERRED_CATALOG):
+if _catalog_usable(PREFERRED_CATALOG):
     CATALOG, SCHEMA_PREFIX = PREFERRED_CATALOG, ""
 else:
     CATALOG, SCHEMA_PREFIX = FALLBACK_CATALOG, FALLBACK_SCHEMA_PREFIX

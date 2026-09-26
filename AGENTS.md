@@ -80,6 +80,11 @@ flowguard/
   and 06 (after 02) → 07. The job in `deploy/job.json` encodes this graph.
 - Databricks CLI profile: `flowguard`. The SQL warehouse ID is in `deploy/app.json`. The Git folder path is in
   `deploy/job.json`.
+- **This deployment** (Harsha) runs on workspace `dbc-4c89dd88-f18b` via CLI profile `flowguard-b`, catalog
+  `workspace` with `flowguard_bronze / flowguard_silver / flowguard_gold`, app `flowguard-harsha` and job
+  `flowguard-refresh-harsha`. Code goes up with `databricks sync ./flowguard <workspace path> -p flowguard-b`
+  and the app with `databricks apps deploy flowguard-harsha --source-code-path <app path> -p flowguard-b`.
+  The Git-folder flow above is the original workflow and still applies to the repo generally.
 - Free Edition limits:
   - one small SQL warehouse
   - compute quota: if exceeded, compute stops for the day, and the app's snapshot fallback exists for this reason
