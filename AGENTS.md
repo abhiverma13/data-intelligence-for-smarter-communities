@@ -132,7 +132,8 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
   Headless: `chrome --headless=new --virtual-time-budget=8000 --dump-dom "<url>"`.
 - **Map view:** the hero card toggles `Map | Radar` (default map; `?view=radar` for the chart). The self-test also
   reports `map_mismatch=0`. Check every POI, one outlook date, and a location switch in the page (layers, end
-  labels, cards and the KPI card must all change). The after-hours band is drawn on the radar view.
+  labels, cards and the KPI card must all change). After hours shows as the band on the radar and as a badge in
+  the map's KPI card (grey when normal, amber pill when unusual).
 - **Visual check:** after UI changes, take screenshots with
   `chrome --headless=new --window-size=1440,1250 --screenshot=out.png "<url>&theme=dark"`, and repeat with
   `theme=light` and a 1280 width. The URL params are `poi`, `date`, `t=HH:MM`, `theme`, `view=map|radar`, and `lab=1` (opens

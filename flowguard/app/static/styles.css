@@ -241,6 +241,17 @@ body.outlook .legend .hist-only, body:not(.outlook) .legend .outlook-only { disp
 .map-kpi b { font-size: 24px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .map-kpi .chip { font-size: 12px; }
 .map-kpi .chip .dot { width: 15px; height: 15px; }
+.map-kpi .ah-badge {
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted);
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.map-kpi .ah-badge.unusual {
+  color: var(--ink); font-weight: 700; border-top: 0; padding: 4px 8px 4px 4px; border-radius: 999px;
+  background: color-mix(in srgb, var(--warning) calc(var(--tint) * 100%), transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 60%, transparent);
+}
+.map-kpi .ah-badge .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--warning); display: grid; place-items: center; flex: none; }
+.map-kpi .ah-badge .dot svg { width: 11px; height: 11px; fill: #fff; }
 .map-reset { min-width: 34px; }
 .map-key { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin-top: 10px; font-size: 13px; color: var(--ink-2); }
 .map-key:empty { display: none; }
