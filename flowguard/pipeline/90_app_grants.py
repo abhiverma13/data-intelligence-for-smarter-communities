@@ -21,7 +21,7 @@ from databricks.sdk import WorkspaceClient
 
 APP_NAME = "flowguard-harsha"
 APP_CATALOG, APP_GOLD = "flowguard", "flowguard.gold"   # the app reads the shared gold tables (see app.yaml), not CATALOG
-GENIE_SPACE_ID = "01f1b96d49671f1b8b14577c8809aacc"   # Genie space "FlowGuard – Park Royal, UBC, Waterfront" (shared with Verma's app)
+GENIE_SPACE_ID = "01f1b9dfbc071b5090e9f954fec859d9"   # Harsha's own Genie space "FlowGuard (Harsha) – Park Royal, UBC, Waterfront"
 
 w = WorkspaceClient()
 app = w.apps.get(name=APP_NAME)

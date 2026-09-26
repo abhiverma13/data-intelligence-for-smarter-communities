@@ -120,11 +120,16 @@ flowguard/
   | Branch | `deploy/harsha-workspace-b` | `main` |
   | App | `flowguard-harsha` (own service principal) | `flowguard` |
   | App reads | `flowguard.gold` (shared, built by Verma's pipeline) | `flowguard.gold` |
-  | Genie space | `01f1b96d…aacc` (Verma's, shared; app SP needs `CAN_RUN` from `90_app_grants`) | same |
+  | Genie space | `01f1b9dfbc07…59d9` "FlowGuard (Harsha)", in Harsha's home folder; app SP has `CAN_RUN` | `01f1b96d…aacc` |
   | Job / notebooks write | `flowguard-refresh-harsha` → `workspace.flowguard_*` (private copy) | `flowguard-refresh` → `flowguard.*` |
   | Code path | `/Workspace/Users/aminharsh317@gmail.com/data-intelligence-for-smarter-communities` | `/Workspace/Users/a.verma1304@gmail.com/…` |
 
   - Workspace `dbc-4c89dd88-f18b`, CLI profile `flowguard-b`; the one SQL warehouse is shared.
+  - Only the data (`flowguard.gold`) and the warehouse are shared. Harsha's Genie space was created from Verma's
+    serialized space (same 8 gold tables, column configs and verified example SQL) with instructions rewritten for
+    two audiences (operators, and riders asking when to travel) plus a "best time to leave" example. Recreate or
+    update it through `/api/2.0/genie/spaces` (`include_serialized_space=true` on GET gives the payload); don't
+    edit Verma's space.
   - `app.yaml` pins the app to `flowguard.gold`. `90_app_grants` gives the app's SP `USE CATALOG` on `flowguard` and
     `USE SCHEMA` + `SELECT` on `flowguard.gold`. Harsha has `ALL_PRIVILEGES` on `flowguard`, granted by Verma.
   - `00_config.py` on this branch is pinned to `workspace.flowguard_*`, so these notebooks can never overwrite the
@@ -238,8 +243,8 @@ Next, in order of points per hour:
 2. **Make the analysis visible in Databricks**: an AI/BI dashboard or a short `09_insights` notebook with `display()`
    charts (egress kernel, backtest R² vs typical week per POI, surge-day calendar, corridor mix). Read-only over gold;
    no new formulas outside `fg_core`. Keep the MLflow experiment ready to show.
-3. **Genie on this app**: `GENIE_SPACE_ID` is set (Verma's shared space). Run `90_app_grants` so `flowguard-harsha`'s
-   service principal gets `CAN_RUN`, then redeploy and ask a question in the app.
+3. **Genie on this app**: Harsha's own space is set in `app.yaml` and the app SP already has `CAN_RUN`
+   (tested: "best time to leave Park Royal on a Saturday" answers in plain language). Redeploy to go live.
 4. **"With more data" slide**: automatic passenger counts, GTFS-RT, event calendars, weather; plus the security
    extension (overnight arrivals are 33% out-of-region vs 15% in daytime).
 5. **Sunday 9 AM**: restart `flowguard-harsha`, have the human confirm `/api/health` → `last_source=live`, keep a

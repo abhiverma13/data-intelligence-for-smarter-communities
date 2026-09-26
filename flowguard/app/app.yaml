@@ -16,6 +16,6 @@ env:
   - name: SCHEMA
     value: "gold"
   - name: GENIE_SPACE_ID
-    value: "01f1b96d49671f1b8b14577c8809aacc"   # Genie space "FlowGuard – Park Royal, UBC, Waterfront" (Verma's; needs CAN_RUN via 90_app_grants)
+    value: "01f1b9dfbc071b5090e9f954fec859d9"   # Harsha's own Genie space "FlowGuard (Harsha) – …" over the shared flowguard.gold
   - name: DATA_MODE
     value: "live"              # live = gold tables via SQL warehouse, auto-fallback to static/data snapshot
