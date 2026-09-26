@@ -200,8 +200,35 @@ Radar | Map toggle). Harsha's `flowguard-harsha` is deployed from `deploy/harsha
 `flowguard.gold`.
 Pipeline and app are multi-POI (Park Royal, UBC, Waterfront): the app has a location switcher, every endpoint takes
 `?poi=`, and the snapshot lives in `app/static/data/<poi>/`.
-Next:
+## Judging rubric (from the organisers' onboarding guide) and where we stand
+
+Presentations are Sunday Sept 27, 11:30 AM: 5 min pitch + 3 min Q&A, round robin then a 4-team final. Scores below
+are a self-assessment as of Sept 25 evening; use them to decide what to work on, and prefer work that moves points.
+
+| Criterion | Pts | Est. | Evidence we have | Gap |
+|---|---|---|---|---|
+| Data analysis in Databricks (patterns across POIs; segmentation, visualization, modelling, prediction) | 15 | 11–13 | 3 POIs; segmentation (corridors, day types, mobility signature); exit forecast R² 0.94–0.99 vs typical week 0.64 (UBC −1.09); MLflow run per POI; findings in `data_findings.md` | Analysis isn't *visible* in Databricks: notebooks 00–08 mostly `print`, only 2 `display()` calls, no charts or dashboard |
+| Extra credit: well-structured pipelines / reproducible analysis | +5 | +4–5 | Medallion tables in UC, job DAG, one `fg_core`/`fg_settings` shared by notebooks and `run_local.py` | — |
+| Actionable insights in a separate tool (interactive, visually clear, tailored user, grounded in data, plus what other data would add) | 25 | 21–24 | Live Databricks App on gold; action card with levers and lead time; map; Scenario Lab; outlook; "Why trust this?" backtest | No "what other data would improve this" story; Genie drawer unused (`GENIE_SPACE_ID` empty); app auto-stops 24 h after start |
+| Originality (5) & impact clearly communicated (5) | 10 | 7–9 | Dwell → directional exit wave vs scheduled capacity, well beyond a dashboard | Impact must be stated in the pitch (e.g. Boxing Day: eastbound strain flagged 2 h ahead, on a holiday schedule) |
+| Presentation (problem, solution, impact, next steps) | 5 | 2–4 | — | No pitch script yet (`docs/pitch_script.md` is referenced but doesn't exist) |
+
+Total estimate: 44–52 / 55, +3–5 extra credit.
+
+Next, in order of points per hour:
+1. **Pitch script + demo run order** in `docs/pitch_script.md`, built from `data_findings.md` (quote it, never spec
+   §4.3): problem ~45 s → insight ~60 s → live demo ~2 min → impact ~45 s → next steps ~30 s. Rehearse against a timer.
+2. **Make the analysis visible in Databricks**: an AI/BI dashboard or a short `09_insights` notebook with `display()`
+   charts (egress kernel, backtest R² vs typical week per POI, surge-day calendar, corridor mix). Read-only over gold;
+   no new formulas outside `fg_core`. Keep the MLflow experiment ready to show.
+3. **Genie space** over the gold tables: set `GENIE_SPACE_ID` in `app/app.yaml` and `90_app_grants`, re-run the
+   grants notebook, redeploy.
+4. **"With more data" slide**: automatic passenger counts, GTFS-RT, event calendars, weather; plus the security
+   extension (overnight arrivals are 33% out-of-region vs 15% in daytime).
+5. **Sunday 9 AM**: restart `flowguard-harsha`, have the human confirm `/api/health` → `last_source=live`, keep a
+   `?date=2025-12-26` link ready; the snapshot is the fallback.
+6. Small: both READMEs still say "Park Royal Mobility Intelligence"; FlowGuard now covers three POIs.
+
+Ongoing:
 - redeploy the app after each app change (`databricks apps deploy …`, see README)
-- Genie space ("Ask FlowGuard" drawer is wired; set `GENIE_SPACE_ID` in `app/app.yaml` and in `90_app_grants`)
-- pitch script (`docs/pitch_script.md`) built from `data_findings.md`
 - stretch: after-hours watch (security theme)
