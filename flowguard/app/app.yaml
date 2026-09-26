@@ -16,6 +16,6 @@ env:
   - name: SCHEMA
     value: "gold"
   - name: GENIE_SPACE_ID
-    value: ""                  # stretch: Genie space id from its URL (/genie/rooms/<id>)
+    value: "01f1b96d49671f1b8b14577c8809aacc"   # Genie space "FlowGuard – Park Royal, UBC, Waterfront"
   - name: DATA_MODE
     value: "live"              # live = gold tables via SQL warehouse, auto-fallback to static/data snapshot

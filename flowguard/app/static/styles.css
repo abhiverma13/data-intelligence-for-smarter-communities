@@ -273,6 +273,7 @@ table.ready { width: 100%; border-collapse: separate; border-spacing: 0 6px; fon
 .ask-out table { border-collapse: collapse; font-size: 13px; width: 100%; }
 .ask-out th, .ask-out td { border-bottom: 1px solid var(--border); padding: 4px 6px; text-align: left; }
 .ask-q { font-weight: 700; }
+.ask-a p { margin: 0 0 6px; } .ask-a ul { margin: 0 0 6px; padding-left: 20px; }
 
 /* Scenario Lab open on a wide screen: keep the panels it changes visible beside the drawer */
 @media (min-width: 1000px) {

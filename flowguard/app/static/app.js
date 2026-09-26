@@ -500,6 +500,19 @@ function selfTest() {
 }
 
 // ---------------------------------------------------------------- genie
+/** Genie answers use light Markdown: escape everything, then allow **bold**, `code` and "- " bullet lists. */
+function miniMarkdown(text) {
+  const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  let html = "", inList = false;
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = line.match(/^\s*[-*]\s+(.*)$/);
+    if (m) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inline(m[1])}</li>`; continue; }
+    if (inList) { html += "</ul>"; inList = false; }
+    if (line.trim()) html += `<p>${inline(line)}</p>`;
+  }
+  return html + (inList ? "</ul>" : "");
+}
+
 function genieChips() {
   const n = poiName();
   const qs = [
@@ -520,7 +533,7 @@ async function ask(q) {
     const r = await getJSON("/api/genie/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q, conversation_id: state.genieConv }) });
     state.genieConv = r.conversation_id || state.genieConv;
     let html = r.error ? `<div class="caption">${esc(r.error)}</div>` : "";
-    if (r.text) html += `<div>${esc(r.text)}</div>`;
+    if (r.text) html += `<div class="ask-a">${miniMarkdown(r.text)}</div>`;
     if (r.sql) html += `<details><summary>Show the SQL Genie ran</summary><pre>${esc(r.sql)}</pre></details>`;
     if (r.columns && r.rows) {
       html += `<table><tr>${r.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>${r.rows.slice(0, 20).map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</table>`;
