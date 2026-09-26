@@ -22,19 +22,9 @@ const STATUS = {
   "No service": ["st-none", "dash"],
   Normal: ["st-good", "check"], Elevated: ["st-warning", "bang"], High: ["st-serious", "up"], Severe: ["st-critical", "x"],
 };
-const LEVERS = {
-  EASTBOUND: (s) => [`Stage supplemental eastbound (R2-direction) trips at Park Royal exchange from ${s}`,
-    "Position passenger-management staff at the eastbound bays",
-    "Message riders: consider a later departure or alternative routes"],
-  DOWNTOWN: (s) => [`Add short-turn downtown trips (250/257 direction) from ${s}`,
-    "Flag southbound Lions Gate pressure to bridge operations",
-    "Staff the downtown bays"],
-  WEST_VAN_LOCAL: (s) => [`Ask West Vancouver Blue Bus to hold a spare local bus at Park Royal from ${s}`,
-    "Open overflow wayfinding at the local bays"],
-};
 
 const state = {
-  days: null, model: null, day: null, date: null, slot: 26, playing: false, speed: 1, timer: null, source: "",
+  pois: [], poi: null, days: null, model: null, day: null, date: null, slot: 26, playing: false, speed: 1, timer: null, source: "",
   sc: { crowd: 0, service: 0, eventSlot: 44, eventSize: 0 },
 };
 let radar = null;
@@ -44,6 +34,7 @@ const fmtSlot = (i) => {
   const m = i * SLOT_MIN;
   return `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 };
+const slotOf = (hhmm) => Number(hhmm.slice(0, 2)) * 2 + Math.floor(Number(hhmm.slice(3, 5)) / SLOT_MIN);
 const fmtMin = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(((m % 60) + 60) % 60).padStart(2, "0")}`;
 const pct = (v) => (v == null ? "–" : `${Math.round(v * 100)}%`);
 const x2 = (v) => (v == null ? "–" : `${v.toFixed(v >= 10 ? 0 : 1)}×`);
@@ -95,7 +86,10 @@ function view(g, t) {
     let gap = null, ready;
     if (r.svc[k] <= 0) ready = "No service";
     else {
-      gap = dem / Math.max(svc, 0.5) / G.typical_load;
+      // scale the server's gap (exact when no scenario; handles targets past midnight on another day type)
+      gap = r.gap[k] != null && base > 0
+        ? (r.gap[k] * (dem / base) * Math.max(r.svc[k], 0.5)) / Math.max(svc, 0.5)
+        : dem / Math.max(svc, 0.5) / G.typical_load;
       ready = dem < th.min_demand_share * G.typical_demand ? "Prepared" : levelOf(gap, th.readiness);
     }
     return { tau, dem, svc, idx, gap, ready };
@@ -160,9 +154,8 @@ function renderSignature() {
 
 function renderCatchment() {
   const d = state.day, s = d.slots[state.slot];
-  const ns = (s.shares.NS_WEST ?? 0) + (s.shares.NS_EAST ?? 0);
-  const nsB = (s.base_shares.NS_WEST ?? 0) + (s.base_shares.NS_EAST ?? 0);
-  $("#offNS").innerHTML = `<b>${pct(1 - ns)}</b> of arrivals must leave the North Shore <span>(normal ${pct(1 - nsB)})</span>`;
+  $("#offNS").innerHTML = s.local == null ? "" :
+    `<b>${pct(1 - s.local)}</b> ${esc(d.poi.catchment_kpi)} <span>(normal ${pct(1 - s.local_base)})</span>`;
   const max = Math.max(0.2, ...d.corridors.flatMap((c) => [s.shares[c.key] ?? 0, s.base_shares[c.key] ?? 0])) * 1.1;
   $("#catch").innerHTML = d.corridors.map((c) => {
     const v = s.shares[c.key], b = s.base_shares[c.key];
@@ -181,19 +174,19 @@ function renderAction() {
     card.style.setProperty("--st", css("--good"));
     card.innerHTML = `<div class="action-top">${chip("Prepared")}
       <div class="action-title">All route groups prepared for the next 2 hours${tag}</div></div>
-      <p class="action-why">Expected exit demand per scheduled trip is within the normal range for the ${esc(d.service_label)} schedule. No action needed.</p>`;
+      <p class="action-why">Expected exit demand per unit of scheduled service is within the normal range for the ${esc(d.service_label)} schedule. No action needed.</p>`;
     return;
   }
   const a = acts[0], G = d.groups[a.g];
   card.style.setProperty("--st", css(a.worst === "Critical" ? "--critical" : "--serious"));
   const also = acts.slice(1).map((x) => `<div class="also-row">${chip(x.worst)}
-    <span><b>${esc(d.groups[x.g].label)}</b> ${fmtSlot(x.start)}–${fmtSlot(x.end)} · in ${x.lead} min · ${x.peak.toFixed(1)}× normal per trip</span></div>`).join("");
+    <span><b>${esc(d.groups[x.g].label)}</b> ${fmtSlot(x.start)}–${fmtSlot(x.end)} · in ${x.lead} min · ${x.peak.toFixed(1)}× normal load</span></div>`).join("");
   card.innerHTML = `
     <div class="action-top">${chip(a.worst)}
       <div class="action-title">${esc(G.label)} ${a.worst.toLowerCase()} ${fmtSlot(a.start)}–${fmtSlot(a.end)}${tag}</div>
       <div class="lead"><b>in ${a.lead} min</b><span>lead time</span></div></div>
-    <p class="action-why">Expected ${esc(G.label.toLowerCase())} exit demand per scheduled trip is <b>${a.peak.toFixed(1)}×</b> a normal ${esc(d.service_label)}, on the ${esc(d.service_label)} schedule (routes ${esc(G.routes)}).</p>
-    <ul class="levers">${LEVERS[a.g](a.stage).map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
+    <p class="action-why">Expected ${esc(G.label.toLowerCase())} exit demand per unit of scheduled service is <b>${a.peak.toFixed(1)}×</b> a normal ${esc(d.service_label)}, on the ${esc(d.service_label)} schedule (${esc(G.routes)}).</p>
+    <ul class="levers">${G.levers.map((l) => `<li>${esc(l.replace("{start}", a.stage))}</li>`).join("")}</ul>
     ${also ? `<div class="also">${also}</div>` : ""}`;
 }
 
@@ -299,14 +292,14 @@ function renderRadar() {
 
 function renderReady() {
   const d = state.day, t = state.slot;
-  const head = `<thead><tr><th>Route group</th><th>Exit demand<br>+60 min</th><th>Scheduled<br>trips / 30 min</th>
+  const head = `<thead><tr><th>Route group</th><th>Exit demand<br>+60 min</th><th title="Scheduled departures per 30 min in bus-equivalents (SkyTrain / SeaBus ≈ 5 buses, West Coast Express ≈ 12)">Scheduled service<br>/ 30 min</th>
     ${HORIZONS.map((h) => `<th>+${h * SLOT_MIN} min<br><span style="text-transform:none">${fmtSlot(t + h)}</span></th>`).join("")}</tr></thead>`;
   const rows = d.group_order.map((g) => {
     const G = d.groups[g], v = view(g, t), mid = v[1];
     return `<tr><td class="grp"><b>${esc(G.label)}</b><small>${esc(G.routes)}</small></td>
       <td class="num">${x2(mid.idx)} <small>normal</small></td>
       <td class="num">${mid.svc == null ? "–" : mid.svc.toFixed(1)}</td>
-      ${v.map((x) => `<td><div class="cell">${chip(x.ready)}<span class="gap">${x.gap == null ? "&nbsp;" : `${x.gap.toFixed(1)}× per trip`}</span></div></td>`).join("")}</tr>`;
+      ${v.map((x) => `<td><div class="cell">${chip(x.ready)}<span class="gap">${x.gap == null ? "&nbsp;" : `${x.gap.toFixed(1)}× normal load`}</span></div></td>`).join("")}</tr>`;
   }).join("");
   $("#ready").innerHTML = head + `<tbody>${rows}</tbody>`;
 }
@@ -337,7 +330,7 @@ function showError(msg) {
 async function loadDay(date) {
   $("#main").classList.add("loading");
   try {
-    const day = await getJSON(`/api/day?date=${date}`);
+    const day = await getJSON(`/api/day?poi=${state.poi}&date=${date}`);
     state.day = day; state.date = date; state.source = day.source;
     $("#day").value = date;
     $("#banner").classList.remove("error");
@@ -352,7 +345,7 @@ async function loadDay(date) {
 }
 
 function fillDays() {
-  const opt = (d, prefix = "") => `<option value="${d.date}">${prefix}${fmtDate(d.date)}${d.label ? ` · ${esc(d.label)}` : ""} · ${d.surge_ratio.toFixed(2)}× usual</option>`;
+  const opt = (d, prefix = "") => `<option value="${d.date}">${prefix}${fmtDate(d.date)}${d.label ? ` · ${esc(d.label)}` : ""}${d.surge_ratio == null ? "" : ` · ${d.surge_ratio.toFixed(2)}× usual`}</option>`;
   const preset = new Set(state.days.presets.map((d) => d.date));
   $("#day").innerHTML = `<optgroup label="Demo days">${state.days.presets.map((d) => opt(d)).join("")}</optgroup>
     <optgroup label="All days (daily arrivals vs usual)">${state.days.days.filter((d) => !preset.has(d.date)).map((d) => opt(d)).join("")}</optgroup>`;
@@ -370,11 +363,12 @@ function renderTrust() {
       <tr><td>Typical-week pattern</td>${HORIZONS.map((h) => `<td>${f(get("typical_week", "departures", h))}</td>`).join("")}</tr></table>
     <div>Learned from dwell time: ${(state.model?.kernel || []).filter((k) => [1, 2, 4].includes(k.k)).map((k) => `${pct(k.cum_p)} of visitors have left within ${(k.k + 1) * 30} min of arriving`).join(" · ")}.</div>
     <div>Times are Vancouver local time. The mobility data is a synthetic subscriber sample, so FlowGuard reports ratios to normal, never headcounts.
-      Corridors use each device's home area as a proxy for the direction of outbound demand. Scheduled trips come from TransLink's Sept 2026 GTFS feed, applied by service day type (weekday / Saturday / Sunday-holiday).</div>`;
+      Corridors use each device's home area as a proxy for the direction of outbound demand. Scheduled service comes from TransLink's Sept 2026 GTFS feed, applied by service day type (weekday / Saturday / Sunday-holiday), in bus-equivalents (SkyTrain and SeaBus ≈ 5 buses, West Coast Express ≈ 12).</div>`;
 }
 
 function syncUrl() {
   const u = new URL(location.href);
+  u.searchParams.set("poi", state.poi);
   u.searchParams.set("date", state.date);
   u.searchParams.set("t", fmtSlot(state.slot));
   history.replaceState(null, "", u);
@@ -409,11 +403,12 @@ async function preset(name) {
   if (name === "reset") state.sc = { crowd: 0, service: 0, eventSlot: 44, eventSize: 0 };
   if (name === "service") state.sc.service = -30;
   if (name === "event") { state.sc.eventSlot = 44; state.sc.eventSize = 1; state.slot = 41; }
-  if (name === "boxing") {
+  if (name === "surge") {
+    const top = state.days.presets[0];
     state.sc = { crowd: 0, service: 0, eventSlot: 44, eventSize: 0 };
-    state.slot = 20;
+    state.slot = slotOf(state.day?.poi.replay_start || "10:00");
     syncLab();
-    if (state.date !== "2025-12-26") return loadDay("2025-12-26");
+    if (top && state.date !== top.date) return loadDay(top.date);
   }
   syncLab();
   renderAll();
@@ -476,6 +471,8 @@ function wire() {
   $("#labBtn").addEventListener("click", () => openDrawer("lab", $("#lab").hidden));
   $("#askBtn").addEventListener("click", () => openDrawer("ask", $("#ask").hidden));
   document.addEventListener("click", (e) => {
+    const sw = e.target.closest("[data-poi]");
+    if (sw && sw.dataset.poi !== state.poi) loadPoi(sw.dataset.poi);
     const p = e.target.closest("[data-preset]");
     if (p) preset(p.dataset.preset);
     const c = e.target.closest("[data-close]");
@@ -501,25 +498,48 @@ function wire() {
   });
 }
 
+function renderPoiSwitch() {
+  $("#poiSwitch").innerHTML = state.pois.map((p) =>
+    `<button role="tab" data-poi="${p.key}" aria-selected="${p.key === state.poi}" title="${esc(p.full_name)}">${esc(p.name)}</button>`).join("");
+  const p = state.pois.find((x) => x.key === state.poi);
+  $("#tagline").textContent = `${p.full_name} · TransLink operations`;
+  document.title = `FlowGuard · ${p.name}`;
+}
+
+/** Switch location: load its day list and model metrics, then a day (keep the replay time). */
+async function loadPoi(key, wantDate) {
+  togglePlay(false);
+  state.poi = key;
+  renderPoiSwitch();
+  try {
+    [state.days, state.model] = await Promise.all([getJSON(`/api/days?poi=${key}`), getJSON(`/api/model?poi=${key}`)]);
+  } catch (e) {
+    return showError(`FlowGuard data is unavailable: ${e.message}`);
+  }
+  fillDays();
+  renderTrust();
+  const top = state.days.presets[0];
+  $("#surgePreset").textContent = top ? `${top.label} replay` : "Surge day replay";
+  const all = [...state.days.presets, ...state.days.days].map((d) => d.date);
+  const date = all.includes(wantDate) ? wantDate : all.includes(state.days.default_date) ? state.days.default_date : all[0];
+  await loadDay(date);
+}
+
 async function init() {
   const params = new URLSearchParams(location.search);
   applyTheme(params.get("theme") || store.get("fg-theme") || "dark");
   wire();
   syncLab();
   try {
-    [state.days, state.model] = await Promise.all([getJSON("/api/days"), getJSON("/api/model")]);
+    state.pois = await getJSON("/api/pois");
   } catch (e) {
     return showError(`FlowGuard data is unavailable: ${e.message}`);
   }
-  fillDays();
-  renderTrust();
   const t = params.get("t");
-  if (t && /^\d{2}:\d{2}$/.test(t)) state.slot = Number(t.slice(0, 2)) * 2 + Math.floor(Number(t.slice(3)) / 30);
-  const all = [...state.days.presets, ...state.days.days].map((d) => d.date);
-  const want = params.get("date");
-  const date = all.includes(want) ? want : all.includes("2026-04-25") ? "2026-04-25" : all[0];
+  if (t && /^\d{2}:\d{2}$/.test(t)) state.slot = slotOf(t);
   if (params.get("lab") === "1") openDrawer("lab");
-  await loadDay(date);
+  const poi = state.pois.some((p) => p.key === params.get("poi")) ? params.get("poi") : state.pois[0].key;
+  await loadPoi(poi, params.get("date"));
   if (params.get("selftest") === "1" && state.day) selfTest();
   getJSON("/api/genie/info").then((g) => { $("#askBtn").hidden = !g.configured; }).catch(() => {});
 }

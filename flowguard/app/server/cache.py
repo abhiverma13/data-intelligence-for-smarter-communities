@@ -1,7 +1,7 @@
 """Data access with an in-memory cache and an offline snapshot fallback.
 
 DATA_MODE=live      read gold tables through the SQL warehouse; on any failure fall back to the snapshot
-DATA_MODE=snapshot  read only the bundled static/data/*.json files (no warehouse needed)
+DATA_MODE=snapshot  read only the bundled static/data/<poi>/*.json files (no warehouse needed)
 """
 from __future__ import annotations
 
@@ -24,13 +24,13 @@ _lock = threading.Lock()
 last_source = {"source": DATA_MODE}
 
 
-def _read(name: str) -> Any:
-    with open(SNAPSHOT_DIR / name, encoding="utf-8") as f:
+def _read(poi: str, name: str) -> Any:
+    with open(SNAPSHOT_DIR / poi / name, encoding="utf-8") as f:
         return json.load(f)
 
 
-def snapshot_dates() -> set:
-    d = SNAPSHOT_DIR / "day"
+def snapshot_dates(poi: str) -> set:
+    d = SNAPSHOT_DIR / poi / "day"
     return {p.stem for p in d.glob("*.json")} if d.exists() else set()
 
 
@@ -55,41 +55,45 @@ def _get(key: str, live: Callable[[], Any], snapshot: Callable[[], Any]) -> Any:
     return value
 
 
-def days() -> Dict[str, Any]:
+def days(poi: str) -> Dict[str, Any]:
+    P = logic.POI_BY_KEY[poi]
+
     def live():
         from . import queries
-        return logic.days_payload(queries.days())
+        return logic.days_payload(P, queries.days(poi))
 
     def snap():
-        return logic.days_payload(_read("days.json"), available=snapshot_dates())
+        return logic.days_payload(P, _read(poi, "days.json"), available=snapshot_dates(poi))
 
-    return _get("days", live, snap)
+    return _get(f"days:{poi}", live, snap)
 
 
-def model() -> Dict[str, Any]:
+def model(poi: str) -> Dict[str, Any]:
     def live():
         from . import queries
-        m = queries.model()
+        m = queries.model(poi)
         return logic.model_payload(m["kernel"], m["backtest"])
 
     def snap():
-        m = _read("model.json")
+        m = _read(poi, "model.json")
         return logic.model_payload(m["kernel"], m["backtest"])
 
-    return _get("model", live, snap)
+    return _get(f"model:{poi}", live, snap)
 
 
-def day(date: str) -> Dict[str, Any]:
+def day(poi: str, date: str) -> Dict[str, Any]:
+    P = logic.POI_BY_KEY[poi]
+
     def build(raw):
-        return logic.day_payload(raw["day"], raw["slots"], raw["timeline"], raw["forecast_all"], raw["corridor_mix"])
+        return logic.day_payload(P, raw["day"], raw["slots"], raw["timeline"], raw["forecast_all"], raw["corridors"])
 
     def live():
         from . import queries
-        return build(queries.day(date))
+        return build(queries.day(poi, date))
 
     def snap():
-        if date not in snapshot_dates():
+        if date not in snapshot_dates(poi):
             raise KeyError(date)
-        return build(_read(f"day/{date}.json"))
+        return build(_read(poi, f"day/{date}.json"))
 
-    return _get(f"day:{date}", live, snap)
+    return _get(f"day:{poi}:{date}", live, snap)

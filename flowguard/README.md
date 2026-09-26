@@ -55,8 +55,9 @@ The Job `flowguard-refresh` ([deploy/job.json](deploy/job.json)) chains 01 → 0
 ## App
 
 `app/` is a Databricks App: FastAPI (`app.py`, `server/`) + a static page (`static/index.html`, `app.js`,
-`styles.css`, Chart.js bundled in `static/vendor/`). `DATA_MODE=live` reads the gold tables through the SQL
-warehouse and falls back automatically to the bundled snapshot `static/data/*.json`; `DATA_MODE=snapshot`
+`styles.css`, Chart.js bundled in `static/vendor/`), with a Park Royal / UBC / Waterfront switcher (every endpoint
+takes `?poi=`). `DATA_MODE=live` reads the gold tables through the SQL warehouse and falls back automatically to
+the bundled snapshot `static/data/<poi>/*.json`; `DATA_MODE=snapshot`
 never touches the warehouse. Scenario Lab maths runs in the browser (`?selftest=1` checks it matches the server).
 
 ```
@@ -86,3 +87,10 @@ If `CREATE CATALOG` isn't permitted, everything falls back to the `workspace` ca
 - Park Royal CSV: stays where it was downloaded (`synthetic_park_royal_mall.csv`).
 - GTFS: `local/data/google_transit.zip`, unzipped to `local/data/gtfs/`
   (source: https://gtfs-static.translink.ca/gtfs/google_transit.zip).
+
+## Deploy / redeploy the app
+
+```
+databricks apps deploy flowguard --source-code-path /Workspace/Users/a.verma1304@gmail.com/data-intelligence-for-smarter-communities/flowguard/app --profile flowguard
+```
+(push → Pull in the Git folder first). Apps auto-stop 24 h after start/deploy: `databricks apps start flowguard --profile flowguard`.

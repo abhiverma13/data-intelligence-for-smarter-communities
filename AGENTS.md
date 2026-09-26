@@ -40,8 +40,8 @@ flowguard/
    `fg_settings.py` (per-POI settings in `pois.json`). Notebooks use Spark only to aggregate the ~21M visits to
    slots, then call `fg_core` once per POI.
    `local/run_local.py` calls the same functions. Never re-implement a formula inside a notebook.
-2. **The browser mirrors `fg_core`.** `app/static/app.js` (`view`, `actionsAt`) re-implements the readiness gap
-   and action logic so the Scenario Lab can recompute instantly. `app/server/logic.py` holds copies of the
+2. **The browser mirrors `fg_core`.** `app/static/app.js` (`view`, `actionsAt`) rescales the server's gap for
+   scenarios and re-implements the readiness/action logic so the Scenario Lab can recompute instantly. `app/server/logic.py` holds copies of the
    thresholds. If you change readiness or action logic in `fg_core`/`fg_settings`, update both, then run the
    self-test (see Verification).
 3. **Timestamps are Vancouver local clock time**, despite the `Z` suffix in the raw data. They are stored as
@@ -105,8 +105,8 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
   Headless: `chrome --headless=new --virtual-time-budget=8000 --dump-dom "<url>"`.
 - **Visual check:** after UI changes, take screenshots with
   `chrome --headless=new --window-size=1440,1250 --screenshot=out.png "<url>&theme=dark"`, and repeat with
-  `theme=light` and a 1280 width. The URL params are `date`, `t=HH:MM`, `theme`, and `lab=1` (opens the
-  Scenario Lab).
+  `theme=light` and a 1280 width. The URL params are `poi`, `date`, `t=HH:MM`, `theme`, and `lab=1` (opens
+  the Scenario Lab). Run the self-test for every POI (`?poi=ubc&date=…&selftest=1`).
 - **Expected numbers** (`run_local.py` prints all of these):
   - Park Royal backtest R²: egress 0.97 / 0.96 / 0.95 / 0.94 vs typical week 0.64. Boxing Day: first eastbound
     alert at 11:00 for 13:00. Normal Saturday 2026-04-25: nearly all Prepared.
@@ -131,10 +131,10 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
 
 Done: pipeline 01–07, egress model with MLflow, GTFS service, readiness timeline, app (live + snapshot),
 deploy and job configs.
-Pipeline is multi-POI (Park Royal, UBC, Waterfront). The app still serves Park Royal only (`server/logic.py`
-constants, old table names, Park Royal snapshot) until the location switcher lands.
+Pipeline and app are multi-POI (Park Royal, UBC, Waterfront): the app has a location switcher, every endpoint takes
+`?poi=`, and the snapshot lives in `app/static/data/<poi>/`.
 Next:
-- app: location switcher, read `pois.json`, query the renamed multi-POI tables, per-POI snapshot
+- redeploy the app after each app change (`databricks apps deploy …`, see README)
 - Genie space ("Ask FlowGuard" drawer is wired; set `GENIE_SPACE_ID` in `app/app.yaml` and in `90_app_grants`)
 - pitch script (`docs/pitch_script.md`) built from `data_findings.md`
 - stretch: after-hours watch (security theme)

@@ -47,7 +47,8 @@
         ["2026-03-20", "Normal Friday"],
         ["2026-08-15", "August Saturday (holdout)"]
       ],
-      "default_date": "2026-04-25"
+      "default_date": "2026-04-25",
+      "replay_start": "10:00"
     },
     {
       "key": "ubc",
@@ -61,7 +62,7 @@
       "hub": "UBC Exchange",
       "corridors": [
         {"key": "CAMPUS", "label": "UBC campus"},
-        {"key": "DOWNTOWN_NS", "label": "Downtown & North Shore"},
+        {"key": "DOWNTOWN_NS", "label": "Downtown & N. Shore"},
         {"key": "EAST", "label": "East via Broadway"},
         {"key": "SOUTH", "label": "South via 41st/49th"},
         {"key": "BC_OTHER", "label": "Rest of BC"},
@@ -97,7 +98,8 @@
         ["2026-02-04", "Normal term Wednesday"],
         ["2026-07-15", "Summer Wednesday (holdout)"]
       ],
-      "default_date": "2026-02-04"
+      "default_date": "2026-02-04",
+      "replay_start": "10:00"
     },
     {
       "key": "waterfront",
@@ -109,9 +111,9 @@
       "stop_radius_m": 400, "terminating_radius_m": 800,
       "hub": "Waterfront Station",
       "corridors": [
-        {"key": "DOWNTOWN", "label": "Downtown & West End"},
-        {"key": "NORTH_SHORE", "label": "North Shore via SeaBus"},
-        {"key": "EAST", "label": "East via Expo / WCE"},
+        {"key": "DOWNTOWN", "label": "Downtown/West End"},
+        {"key": "NORTH_SHORE", "label": "North Shore (SeaBus)"},
+        {"key": "EAST", "label": "East via Expo/WCE"},
         {"key": "SOUTH", "label": "South via Canada Line"},
         {"key": "WEST", "label": "West to Kits / UBC"},
         {"key": "BC_OTHER", "label": "Rest of BC"},
@@ -154,7 +156,8 @@
         ["2026-03-28", "Normal Saturday"],
         ["2026-07-25", "July Saturday (holdout)"]
       ],
-      "default_date": "2026-03-25"
+      "default_date": "2026-03-25",
+      "replay_start": "08:30"
     }
   ],
   "capacity_bus_equivalents": {
