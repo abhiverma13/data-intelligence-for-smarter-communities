@@ -1,37 +1,109 @@
-origin,corridor
-West Vancouver,NS_WEST
-North Vancouver,NS_EAST
-Burnaby,EAST
-New Westminster,EAST
-Surrey,EAST
-Port Moody,EAST
-Langley,EAST
-Maple Ridge,EAST
-Pitt Meadows,EAST
-Hastings-Sunrise,EAST
-Renfrew-Collingwood,EAST
-Grandview-Woodland,EAST
-Downtown,SOUTH
-West End,SOUTH
-Kitsilano,SOUTH
-Fairview,SOUTH
-Mount Pleasant,SOUTH
-Strathcona,SOUTH
-UBC,SOUTH
-Arbutus Ridge,SOUTH
-Dunbar-Southlands,SOUTH
-Marpole,SOUTH
-Oakridge,SOUTH
-Sunset,SOUTH
-Kensington-Cedar Cottage,SOUTH
-Victoria-Fraserview,SOUTH
-Killarney,SOUTH
-Richmond,SOUTH
-Delta,SOUTH
-British Columbia Other,BC_OTHER
-Ontario,OUT_OF_REGION
-Alberta,OUT_OF_REGION
-Manitoba,OUT_OF_REGION
-Saskatchewan and Territories,OUT_OF_REGION
-Atlantic Canada,OUT_OF_REGION
-International,OUT_OF_REGION
+poi,origin,corridor
+park_royal,West Vancouver,NS_WEST
+park_royal,North Vancouver,NS_EAST
+park_royal,Burnaby,EAST
+park_royal,New Westminster,EAST
+park_royal,Surrey,EAST
+park_royal,Port Moody,EAST
+park_royal,Langley,EAST
+park_royal,Maple Ridge,EAST
+park_royal,Pitt Meadows,EAST
+park_royal,Hastings-Sunrise,EAST
+park_royal,Renfrew-Collingwood,EAST
+park_royal,Grandview-Woodland,EAST
+park_royal,Downtown,SOUTH
+park_royal,West End,SOUTH
+park_royal,Kitsilano,SOUTH
+park_royal,Fairview,SOUTH
+park_royal,Mount Pleasant,SOUTH
+park_royal,Strathcona,SOUTH
+park_royal,UBC,SOUTH
+park_royal,Arbutus Ridge,SOUTH
+park_royal,Dunbar-Southlands,SOUTH
+park_royal,Marpole,SOUTH
+park_royal,Oakridge,SOUTH
+park_royal,Sunset,SOUTH
+park_royal,Kensington-Cedar Cottage,SOUTH
+park_royal,Victoria-Fraserview,SOUTH
+park_royal,Killarney,SOUTH
+park_royal,Richmond,SOUTH
+park_royal,Delta,SOUTH
+park_royal,British Columbia Other,BC_OTHER
+park_royal,Ontario,OUT_OF_REGION
+park_royal,Alberta,OUT_OF_REGION
+park_royal,Manitoba,OUT_OF_REGION
+park_royal,Saskatchewan and Territories,OUT_OF_REGION
+park_royal,Atlantic Canada,OUT_OF_REGION
+park_royal,International,OUT_OF_REGION
+ubc,West Vancouver,DOWNTOWN_NS
+ubc,North Vancouver,DOWNTOWN_NS
+ubc,Burnaby,EAST
+ubc,New Westminster,EAST
+ubc,Surrey,EAST
+ubc,Port Moody,EAST
+ubc,Langley,EAST
+ubc,Maple Ridge,EAST
+ubc,Pitt Meadows,EAST
+ubc,Hastings-Sunrise,EAST
+ubc,Renfrew-Collingwood,EAST
+ubc,Grandview-Woodland,EAST
+ubc,Downtown,DOWNTOWN_NS
+ubc,West End,DOWNTOWN_NS
+ubc,Kitsilano,EAST
+ubc,Fairview,EAST
+ubc,Mount Pleasant,EAST
+ubc,Strathcona,DOWNTOWN_NS
+ubc,UBC,CAMPUS
+ubc,Arbutus Ridge,SOUTH
+ubc,Dunbar-Southlands,SOUTH
+ubc,Marpole,SOUTH
+ubc,Oakridge,SOUTH
+ubc,Sunset,SOUTH
+ubc,Kensington-Cedar Cottage,EAST
+ubc,Victoria-Fraserview,SOUTH
+ubc,Killarney,SOUTH
+ubc,Richmond,SOUTH
+ubc,Delta,SOUTH
+ubc,British Columbia Other,BC_OTHER
+ubc,Ontario,OUT_OF_REGION
+ubc,Alberta,OUT_OF_REGION
+ubc,Manitoba,OUT_OF_REGION
+ubc,Saskatchewan and Territories,OUT_OF_REGION
+ubc,Atlantic Canada,OUT_OF_REGION
+ubc,International,OUT_OF_REGION
+waterfront,West Vancouver,NORTH_SHORE
+waterfront,North Vancouver,NORTH_SHORE
+waterfront,Burnaby,EAST
+waterfront,New Westminster,EAST
+waterfront,Surrey,EAST
+waterfront,Port Moody,EAST
+waterfront,Langley,EAST
+waterfront,Maple Ridge,EAST
+waterfront,Pitt Meadows,EAST
+waterfront,Hastings-Sunrise,EAST
+waterfront,Renfrew-Collingwood,EAST
+waterfront,Grandview-Woodland,EAST
+waterfront,Downtown,DOWNTOWN
+waterfront,West End,DOWNTOWN
+waterfront,Kitsilano,WEST
+waterfront,Fairview,SOUTH
+waterfront,Mount Pleasant,SOUTH
+waterfront,Strathcona,DOWNTOWN
+waterfront,UBC,WEST
+waterfront,Arbutus Ridge,WEST
+waterfront,Dunbar-Southlands,WEST
+waterfront,Marpole,SOUTH
+waterfront,Oakridge,SOUTH
+waterfront,Sunset,SOUTH
+waterfront,Kensington-Cedar Cottage,SOUTH
+waterfront,Victoria-Fraserview,SOUTH
+waterfront,Killarney,SOUTH
+waterfront,Richmond,SOUTH
+waterfront,Delta,SOUTH
+waterfront,British Columbia Other,BC_OTHER
+waterfront,Ontario,OUT_OF_REGION
+waterfront,Alberta,OUT_OF_REGION
+waterfront,Manitoba,OUT_OF_REGION
+waterfront,Saskatchewan and Territories,OUT_OF_REGION
+waterfront,Atlantic Canada,OUT_OF_REGION
+waterfront,International,OUT_OF_REGION

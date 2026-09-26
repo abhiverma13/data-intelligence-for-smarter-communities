@@ -1,17 +1,17 @@
-"""Build the FlowGuard map geometry asset (app/static/data/map.json) from the local TransLink GTFS feed.
+"""Build the FlowGuard map geometry assets (app/static/data/<poi>/map.json) from the local TransLink GTFS feed.
 
 Run from the repo root:
     python flowguard/local/build_map_geometry.py
 
-Outputs real route polylines per route group, a Park Royal hub, labelled waypoints and a simplified
-land/water silhouette. The frontend (static/map.js) projects these lat/lon rings itself, so the
-geometry is stored unprojected. Route-group classification reuses fg_settings.ROUTE_GROUP_RULES and
-config/route_group_overrides.csv, the same rules as pipeline/06_gtfs_service, so the map's lines
-match the readiness groups exactly.
+For every point of interest in app/server/pois.json it writes real route polylines per route group, the hub,
+labelled waypoints, a band corner per group and a simplified land silhouette (the offline fallback under the
+Leaflet basemap). Departing trips and their route groups come from fg_core.poi_departures, the same function
+pipeline/06_gtfs_service uses, so the map's lines match the readiness groups exactly.
 """
 from __future__ import annotations
 
 import csv
+import itertools
 import json
 import math
 import os
@@ -19,41 +19,42 @@ import sys
 import urllib.request
 from datetime import datetime, timezone
 
+import pandas as pd
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 FLOWGUARD = os.path.abspath(os.path.join(HERE, ".."))
 GTFS_DIR = os.path.join(HERE, "data", "gtfs")
 CONFIG_DIR = os.path.join(FLOWGUARD, "config")
 PIPELINE_DIR = os.path.join(FLOWGUARD, "pipeline")
-OUT = os.path.join(FLOWGUARD, "app", "static", "data", "map.json")
+OUT_DIR = os.path.join(FLOWGUARD, "app", "static", "data")
 
 sys.path.insert(0, PIPELINE_DIR)
+import fg_core  # noqa: E402
 import fg_settings as S  # noqa: E402
 
 NE_LAND_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson"
-RDP_TOL = 0.0006          # degrees (~65 m) — keeps lines light while staying recognisable
-MAX_SHAPES_PER_GROUP = 3
+RDP_TOL = 0.0004          # degrees (~45 m) — keeps lines light while staying recognisable
+MAX_ROUTES_PER_GROUP = 4  # busiest routes per group (capacity-weighted departures), one shape each
 MIN_LAND_AREA = 1e-5      # drop slivers after clipping
-GROUP_COLOR = {"EASTBOUND": "#3987e5", "DOWNTOWN": "#8b5cf6", "WEST_VAN_LOCAL": "#14b8a6"}
+CORNERS = {"topleft": (-1, 1), "topright": (1, 1), "bottomleft": (-1, -1), "bottomright": (1, -1)}
+TOPRIGHT_PENALTY = 0.4    # the hub KPI and zoom controls live top-right; prefer other corners for bands
 
-# Labelled anchors shown on the map (hand-placed near the real locations).
-WAYPOINTS = [
-    {"label": "Park Royal", "lat": 49.3265, "lon": -123.1380, "kind": "hub"},
-    {"label": "Lions Gate Bridge", "lat": 49.3155, "lon": -123.1385, "kind": "way"},
-    {"label": "Downtown Vancouver", "lat": 49.2827, "lon": -123.1207, "kind": "way"},
-    {"label": "UBC", "lat": 49.2606, "lon": -123.2460, "kind": "way"},
-    {"label": "Lonsdale Quay", "lat": 49.3103, "lon": -123.0824, "kind": "way"},
-    {"label": "Phibbs Exchange", "lat": 49.3149, "lon": -123.0289, "kind": "way"},
-    {"label": "Metrotown", "lat": 49.2276, "lon": -123.0000, "kind": "way"},
-    {"label": "Horseshoe Bay", "lat": 49.3994, "lon": -123.2725, "kind": "way"},
-    {"label": "Dundarave", "lat": 49.3355, "lon": -123.1830, "kind": "way"},
-]
-
-# Rough fallback silhouette if the Natural Earth download fails (stylised, not survey-accurate).
-FALLBACK_LAND = [
-    [[-123.34, 49.41], [-122.90, 49.41], [-122.90, 49.34], [-123.05, 49.32],
-     [-123.12, 49.30], [-123.20, 49.30], [-123.26, 49.33], [-123.34, 49.36]],
-    [[-123.34, 49.28], [-123.24, 49.24], [-123.10, 49.19], [-122.90, 49.19], [-122.90, 49.28]],
-]
+# Per POI: how far from the hub lines are drawn (long rail/express lines are cut there) and hand-placed labels.
+MAP = {
+    "park_royal": {"radius_km": 15, "waypoints": [
+        ("Lions Gate Bridge", 49.3155, -123.1385), ("Downtown Vancouver", 49.2827, -123.1207),
+        ("Lonsdale Quay", 49.3103, -123.0824), ("Phibbs Exchange", 49.3149, -123.0289),
+        ("Metrotown", 49.2276, -123.0000), ("Horseshoe Bay", 49.3994, -123.2725), ("Dundarave", 49.3355, -123.1830)]},
+    "ubc": {"radius_km": 19, "waypoints": [
+        ("Downtown Vancouver", 49.2827, -123.1207), ("Kitsilano", 49.2684, -123.1683),
+        ("Commercial–Broadway", 49.2626, -123.0690), ("Kerrisdale", 49.2344, -123.1553),
+        ("Joyce–Collingwood", 49.2383, -123.0318), ("Metrotown", 49.2276, -123.0000)]},
+    "waterfront": {"radius_km": 14, "waypoints": [
+        ("Lonsdale Quay", 49.3103, -123.0824), ("Stanley Park", 49.3017, -123.1417),
+        ("Commercial–Broadway", 49.2626, -123.0690), ("Metrotown", 49.2276, -123.0000),
+        ("Oakridge–41st", 49.2334, -123.1162), ("YVR Airport", 49.1967, -123.1815),
+        ("Kitsilano", 49.2684, -123.1683), ("UBC", 49.2606, -123.2460)]},
+}
 
 
 # ---------------------------------------------------------------- geometry helpers
@@ -141,101 +142,122 @@ def clip_rect(points, bbox):
 
 
 # ---------------------------------------------------------------- data loading
-def read_csv(name):
-    with open(os.path.join(GTFS_DIR, name), newline="", encoding="utf-8-sig") as f:
-        return list(csv.DictReader(f))
+def gtfs(name, cols):
+    return pd.read_csv(os.path.join(GTFS_DIR, f"{name}.txt"), usecols=cols, dtype=str, encoding="utf-8-sig")
+
+
+def load_feed():
+    stops = gtfs("stops", ["stop_id", "stop_code", "stop_name", "stop_lat", "stop_lon"])
+    stops[["stop_lat", "stop_lon"]] = stops[["stop_lat", "stop_lon"]].astype(float)
+    stop_times = gtfs("stop_times", ["trip_id", "stop_id", "stop_sequence", "departure_time"])
+    trips = gtfs("trips", ["trip_id", "route_id", "service_id", "trip_headsign", "shape_id"])
+    routes = gtfs("routes", ["route_id", "route_short_name", "route_long_name", "route_type"])
+    print(f"stop_times rows: {len(stop_times):,}")
+    return stops, stop_times, trips, routes, fg_core.last_stops(stop_times)
 
 
 def load_overrides():
+    ov = pd.read_csv(os.path.join(CONFIG_DIR, "route_group_overrides.csv"), dtype=str).fillna("")
+    return {poi: dict(zip(g["trip_headsign"], g["route_group"])) for poi, g in ov.groupby("poi")}
+
+
+def load_shapes(wanted):
+    pts = {sid: [] for sid in wanted}
+    with open(os.path.join(GTFS_DIR, "shapes.txt"), newline="", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            if row["shape_id"] in pts:
+                pts[row["shape_id"]].append((int(row["shape_pt_sequence"]), float(row["shape_pt_lon"]), float(row["shape_pt_lat"])))
+    return {sid: [(lon, lat) for _, lon, lat in sorted(p)] for sid, p in pts.items()}
+
+
+def pick_shapes(dep, trips):
+    """Per route group: the most common shape of each of its busiest routes (capacity-weighted departures)."""
+    d = dep[dep["route_group"] != "EXCLUDE"].merge(trips[["trip_id", "shape_id"]], on="trip_id")
     out = {}
-    path = os.path.join(CONFIG_DIR, "route_group_overrides.csv")
-    if os.path.exists(path):
-        with open(path, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                hs = (row.get("trip_headsign") or "").strip().lower()
-                if hs:
-                    out[hs] = (row.get("route_group") or "").strip()
+    for group, g in d.groupby("route_group"):
+        weight = g.groupby("route_name")["capacity"].sum().sort_values(ascending=False)
+        out[group] = [g[g["route_name"] == r]["shape_id"].value_counts().index[0] for r in weight.index[:MAX_ROUTES_PER_GROUP]]
     return out
 
 
-def classify(headsign, overrides):
-    hs = (headsign or "").strip().lower()
-    if hs in overrides:
-        return overrides[hs]
-    for needle, group in S.ROUTE_GROUP_RULES:
-        if needle in hs:
-            return group
-    return S.ROUTE_GROUP_DEFAULT
+def outbound(pts, lat0, lon0, radius_m):
+    """The part of a trip's shape after the POI (nearest point to the hub), cut where it leaves radius_m."""
+    near = min(range(len(pts)), key=lambda i: haversine_m(lat0, lon0, pts[i][1], pts[i][0]))
+    out = []
+    for lon, lat in pts[near:]:
+        out.append((lon, lat))
+        if haversine_m(lat0, lon0, lat, lon) > radius_m:
+            break
+    return out
 
 
-def build_routes():
-    stops = read_csv("stops.txt")
-    pr_stops = {
-        r["stop_id"]
-        for r in stops
-        if r.get("stop_lat") and r.get("stop_lon")
-        and haversine_m(S.POI_LAT, S.POI_LON, float(r["stop_lat"]), float(r["stop_lon"])) <= S.GTFS_STOP_RADIUS_M
-    }
-    print(f"Park Royal stops within {S.GTFS_STOP_RADIUS_M} m: {len(pr_stops)}")
+def assign_corners(ends, lat0, lon0):
+    """Band corner per group: the corner assignment that best matches each group's outward direction."""
+    keys = list(ends)
+    vec = {}
+    for g in keys:
+        dx = (ends[g][0] - lon0) * math.cos(math.radians(lat0)); dy = ends[g][1] - lat0
+        n = math.hypot(dx, dy) or 1.0
+        vec[g] = (dx / n, dy / n)
+    best, best_cost = None, float("inf")
+    for combo in itertools.permutations(CORNERS, len(keys)):
+        cost = 0.0
+        for g, c in zip(keys, combo):
+            cx, cy = CORNERS[c]
+            cost -= (vec[g][0] * cx + vec[g][1] * cy) / math.sqrt(2)
+            cost += TOPRIGHT_PENALTY if c == "topright" else 0.0
+        if cost < best_cost:
+            best, best_cost = dict(zip(keys, combo)), cost
+    return best
 
-    pr_trips = set()
-    with open(os.path.join(GTFS_DIR, "stop_times.txt"), newline="", encoding="utf-8-sig") as f:
-        for row in csv.DictReader(f):
-            if row["stop_id"] in pr_stops:
-                pr_trips.add(row["trip_id"])
-    print(f"trips calling at Park Royal: {len(pr_trips):,}")
 
-    trips = {r["trip_id"]: r for r in read_csv("trips.txt") if r["trip_id"] in pr_trips}
-    routes = {r["route_id"]: r for r in read_csv("routes.txt")}
-    overrides = load_overrides()
+def build_poi(poi, feed, overrides, shapes_cache):
+    stops, stop_times, trips, routes, last = feed
+    cfg = MAP.get(poi["key"], {"radius_km": 15, "waypoints": []})
+    radius = cfg["radius_km"] * 1000
+    lat0, lon0 = poi["lat"], poi["lon"]
+    dep, near = fg_core.poi_departures(stops, stop_times, trips, routes, last, overrides.get(poi["key"], {}), poi)
+    chosen = pick_shapes(dep, trips)
+    shapes = shapes_cache(set(itertools.chain.from_iterable(chosen.values())))
+    print(f"\n{poi['name']}: {len(near)} stops, {len(dep):,} departures")
 
-    group_shapes = {}
-    for t in trips.values():
-        group = classify(t.get("trip_headsign"), overrides)
-        if group == "EXCLUDE":
-            continue
-        group_shapes.setdefault(group, {})
-        sid = t.get("shape_id")
-        if sid:
-            group_shapes[group][sid] = group_shapes[group].get(sid, 0) + 1
-
-    wanted = set()
-    chosen = {}
-    for group, counts in group_shapes.items():
-        top = sorted(counts.items(), key=lambda kv: -kv[1])[:MAX_SHAPES_PER_GROUP]
-        chosen[group] = [sid for sid, _ in top]
-        wanted.update(chosen[group])
-
-    shape_pts = {sid: [] for sid in wanted}
-    with open(os.path.join(GTFS_DIR, "shapes.txt"), newline="", encoding="utf-8-sig") as f:
-        for row in csv.DictReader(f):
-            sid = row["shape_id"]
-            if sid in shape_pts:
-                shape_pts[sid].append((int(row["shape_pt_sequence"]),
-                                       float(row["shape_pt_lon"]), float(row["shape_pt_lat"])))
-
-    def orient(pts):
-        """Start the polyline at the end nearest the hub so timelines run outward."""
-        d0 = haversine_m(S.POI_LAT, S.POI_LON, pts[0][1], pts[0][0])
-        d1 = haversine_m(S.POI_LAT, S.POI_LON, pts[-1][1], pts[-1][0])
-        return pts if d0 <= d1 else pts[::-1]
-
-    groups_out = {}
-    for group in S.ROUTE_GROUPS:
+    groups, ends = {}, {}
+    for g in poi["groups"]:
         lines = []
-        for sid in chosen.get(group, []):
-            pts = [(lon, lat) for _, lon, lat in sorted(shape_pts[sid])]
-            pts = orient(rdp(pts, RDP_TOL))
+        for sid in chosen.get(g["key"], []):
+            pts = rdp(outbound(shapes[sid], lat0, lon0, radius), RDP_TOL)
             if len(pts) >= 2:
                 lines.append([[round(lon, 5), round(lat, 5)] for lon, lat in pts])
-        groups_out[group] = {
-            "label": S.GROUP_LABELS.get(group, group),
-            "corridors": S.GROUP_CORRIDORS.get(group, []),
-            "color": GROUP_COLOR.get(group, "#888888"),
-            "lines": lines,
-        }
-        print(f"  {group}: {len(lines)} line(s), {sum(len(l) for l in lines)} points")
-    return groups_out
+        if lines:   # far end of the longest line: where the group's label and band direction point
+            far = max(lines, key=lambda l: haversine_m(lat0, lon0, l[-1][1], l[-1][0]))[-1]
+            ends[g["key"]] = far
+        groups[g["key"]] = {"label": g["label"], "routes": g["routes"], "corridors": g["corridors"], "lines": lines,
+                            "end": ends.get(g["key"])}
+        print(f"  {g['key']}: {len(lines)} line(s), {sum(len(l) for l in lines)} points  ({', '.join(chosen.get(g['key'], [])) or 'no shapes'})")
+    for k, c in assign_corners(ends, lat0, lon0).items():
+        groups[k]["corner"] = c
+
+    wps = [{"label": poi["name"], "lat": lat0, "lon": lon0, "kind": "hub"}]
+    wps += [{"label": l, "lat": la, "lon": lo, "kind": "way"} for l, la, lo in cfg["waypoints"]
+            if haversine_m(lat0, lon0, la, lo) <= radius * 1.1]
+
+    xs = [p[0] for g in groups.values() for l in g["lines"] for p in l] + [w["lon"] for w in wps]
+    ys = [p[1] for g in groups.values() for l in g["lines"] for p in l] + [w["lat"] for w in wps]
+    pad_x = (max(xs) - min(xs)) * 0.06 or 0.02
+    pad_y = (max(ys) - min(ys)) * 0.06 or 0.02
+    bbox = [round(min(xs) - pad_x, 5), round(min(ys) - pad_y, 5), round(max(xs) + pad_x, 5), round(max(ys) + pad_y, 5)]
+    land, attribution = build_land(bbox)
+    return {
+        "poi": poi["key"],
+        "bbox": bbox,
+        "hub": {"label": poi["name"], "lat": lat0, "lon": lon0},
+        "waypoints": wps,
+        "land": land,
+        "groups": groups,
+        "group_order": S.groups(poi),
+        "attribution": attribution,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
 
 
 def fetch(url):
@@ -276,35 +298,23 @@ def build_land(bbox):
 
 
 def main():
-    groups = build_routes()
+    feed = load_feed()
+    overrides = load_overrides()
+    cache = {}
 
-    xs, ys = [], []
-    for g in groups.values():
-        for line in g["lines"]:
-            xs += [p[0] for p in line]
-            ys += [p[1] for p in line]
-    for w in WAYPOINTS:
-        xs.append(w["lon"]); ys.append(w["lat"])
-    pad_x = (max(xs) - min(xs)) * 0.06 or 0.02
-    pad_y = (max(ys) - min(ys)) * 0.06 or 0.02
-    bbox = [round(min(xs) - pad_x, 5), round(min(ys) - pad_y, 5),
-            round(max(xs) + pad_x, 5), round(max(ys) + pad_y, 5)]
+    def shapes_cache(wanted):
+        missing = wanted - cache.keys()
+        if missing:
+            cache.update(load_shapes(missing))
+        return cache
 
-    land, attribution = build_land(bbox)
-    payload = {
-        "bbox": bbox,
-        "hub": {"label": S.POI_NAME, "lat": S.POI_LAT, "lon": S.POI_LON},
-        "waypoints": WAYPOINTS,
-        "land": land,
-        "groups": groups,
-        "group_order": S.ROUTE_GROUPS,
-        "attribution": attribution,
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, "w", encoding="utf-8") as f:
-        json.dump(payload, f, separators=(",", ":"))
-    print(f"✅ wrote {OUT} ({os.path.getsize(OUT)/1024:.1f} KB)")
+    for poi in S.POIS:
+        payload = build_poi(poi, feed, overrides, shapes_cache)
+        out = os.path.join(OUT_DIR, poi["key"], "map.json")
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(payload, f, separators=(",", ":"))
+        print(f"✅ wrote {out} ({os.path.getsize(out)/1024:.1f} KB)")
 
 
 if __name__ == "__main__":

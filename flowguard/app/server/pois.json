@@ -1,0 +1,167 @@
+{
+  "_comment": "Single source of truth for every point of interest (POI). Read by the pipeline (fg_settings.py) and the app (server/logic.py). Route rules match trip headsigns case-insensitively, first match wins. Lever text may use {start} = recommended start time.",
+  "pois": [
+    {
+      "key": "park_royal",
+      "name": "Park Royal",
+      "full_name": "Park Royal Shopping Centre, West Vancouver",
+      "location_name": "Park Royal Mall",
+      "file": "synthetic_park_royal_mall.csv",
+      "lat": 49.3265, "lon": -123.138,
+      "stop_radius_m": 400, "terminating_radius_m": 600,
+      "hub": "Park Royal exchange",
+      "corridors": [
+        {"key": "NS_WEST", "label": "West Vancouver"},
+        {"key": "NS_EAST", "label": "North Vancouver"},
+        {"key": "EAST", "label": "East via R2"},
+        {"key": "SOUTH", "label": "South via Lions Gate"},
+        {"key": "BC_OTHER", "label": "Rest of BC"},
+        {"key": "OUT_OF_REGION", "label": "Out of province"}
+      ],
+      "local_corridors": ["NS_WEST", "NS_EAST"],
+      "catchment_kpi": "of arrivals must leave the North Shore",
+      "regional_corridors": ["SOUTH", "EAST", "BC_OTHER"],
+      "groups": [
+        {"key": "EASTBOUND", "label": "Eastbound", "routes": "R2 · 255", "corridors": ["EAST", "NS_EAST"],
+         "levers": ["Stage supplemental eastbound (R2-direction) trips at Park Royal exchange from {start}",
+                    "Position passenger-management staff at the eastbound bays",
+                    "Message riders: consider a later departure or alternative routes"]},
+        {"key": "DOWNTOWN", "label": "Downtown", "routes": "250 · 253 · 254 · 257 · 44", "corridors": ["SOUTH"],
+         "levers": ["Add short-turn downtown trips (250/257 direction) from {start}",
+                    "Flag southbound Lions Gate pressure to bridge operations",
+                    "Staff the downtown bays"]},
+        {"key": "WEST_VAN_LOCAL", "label": "West Van local", "routes": "250–257 local", "corridors": ["NS_WEST"],
+         "levers": ["Ask West Vancouver Blue Bus to hold a spare local bus at Park Royal from {start}",
+                    "Open overflow wayfinding at the local bays"]}
+      ],
+      "route_group_rules": [
+        ["school special", "EXCLUDE"],
+        ["metrotown", "EASTBOUND"], ["phibbs", "EASTBOUND"], ["lonsdale", "EASTBOUND"], ["capilano university", "EASTBOUND"],
+        ["vancouver", "DOWNTOWN"], ["ubc", "DOWNTOWN"], ["downtown", "DOWNTOWN"]
+      ],
+      "route_group_default": "WEST_VAN_LOCAL",
+      "presets": [
+        ["2025-12-26", "Boxing Day"],
+        ["2025-12-20", "Pre-Christmas Saturday"],
+        ["2026-04-25", "Normal Saturday"],
+        ["2026-03-20", "Normal Friday"],
+        ["2026-08-15", "August Saturday (holdout)"]
+      ],
+      "default_date": "2026-04-25",
+      "replay_start": "10:00"
+    },
+    {
+      "key": "ubc",
+      "name": "UBC",
+      "full_name": "UBC Vancouver campus",
+      "location_name": "UBC",
+      "file": "synthetic_data_ubc.csv",
+      "lat": 49.2606, "lon": -123.246,
+      "stop_radius_m": 800, "terminating_radius_m": 900,
+      "baseline_weeks": 4,
+      "hub": "UBC Exchange",
+      "corridors": [
+        {"key": "CAMPUS", "label": "UBC campus"},
+        {"key": "DOWNTOWN_NS", "label": "Downtown & N. Shore"},
+        {"key": "EAST", "label": "East via Broadway"},
+        {"key": "SOUTH", "label": "South via 41st/49th"},
+        {"key": "BC_OTHER", "label": "Rest of BC"},
+        {"key": "OUT_OF_REGION", "label": "Out of province"}
+      ],
+      "local_corridors": ["CAMPUS"],
+      "catchment_kpi": "of arrivals live off campus",
+      "regional_corridors": ["DOWNTOWN_NS", "EAST", "SOUTH", "BC_OTHER"],
+      "groups": [
+        {"key": "BROADWAY_EAST", "label": "Broadway east", "routes": "99 · 84 · 25 · 33 · 9", "corridors": ["EAST"],
+         "levers": ["Request extra 99 B-Line / 84 trips from UBC Exchange from {start}",
+                    "Position queue marshals at the 99 B-Line bays",
+                    "Alert Commercial–Broadway SkyTrain to the transfer wave"]},
+        {"key": "DOWNTOWN", "label": "Downtown", "routes": "4 · 14 · 44", "corridors": ["DOWNTOWN_NS"],
+         "levers": ["Add short-turn 4 / 14 trips toward downtown from {start}",
+                    "Promote the 44 Downtown Express at the exchange",
+                    "Staff the downtown bays"]},
+        {"key": "SOUTH", "label": "South", "routes": "R4 · 49", "corridors": ["SOUTH"],
+         "levers": ["Add R4 / 49 trips from UBC Exchange from {start}",
+                    "Alert Canada Line at Oakridge–41st and Langara–49th to transfer demand"]}
+      ],
+      "route_group_rules": [
+        ["wesbrook", "EXCLUDE"],
+        ["downtown", "DOWNTOWN"], ["powell", "DOWNTOWN"], ["hastings", "DOWNTOWN"], ["dundarave", "DOWNTOWN"],
+        ["joyce", "SOUTH"], ["metrotown", "SOUTH"],
+        ["broadway", "BROADWAY_EAST"], ["vcc-clark", "BROADWAY_EAST"], ["brentwood", "BROADWAY_EAST"],
+        ["nanaimo", "BROADWAY_EAST"], ["29th ave", "BROADWAY_EAST"], ["boundary", "BROADWAY_EAST"]
+      ],
+      "route_group_default": "EXCLUDE",
+      "presets": [
+        ["2025-12-06", "Exam-season Saturday"],
+        ["2025-11-26", "Exam-season Wednesday"],
+        ["2026-02-04", "Normal term Wednesday"],
+        ["2026-07-15", "Summer Wednesday (holdout)"]
+      ],
+      "default_date": "2026-02-04",
+      "replay_start": "10:00"
+    },
+    {
+      "key": "waterfront",
+      "name": "Waterfront",
+      "full_name": "Waterfront Station, downtown Vancouver",
+      "location_name": "Waterfront Station",
+      "file": "synthetic_data_waterfront.csv",
+      "lat": 49.2857, "lon": -123.1115,
+      "stop_radius_m": 400, "terminating_radius_m": 800,
+      "hub": "Waterfront Station",
+      "corridors": [
+        {"key": "DOWNTOWN", "label": "Downtown/West End"},
+        {"key": "NORTH_SHORE", "label": "North Shore (SeaBus)"},
+        {"key": "EAST", "label": "East via Expo/WCE"},
+        {"key": "SOUTH", "label": "South via Canada Line"},
+        {"key": "WEST", "label": "West to Kits / UBC"},
+        {"key": "BC_OTHER", "label": "Rest of BC"},
+        {"key": "OUT_OF_REGION", "label": "Out of province"}
+      ],
+      "local_corridors": ["DOWNTOWN"],
+      "catchment_kpi": "of arrivals live outside downtown",
+      "regional_corridors": ["NORTH_SHORE", "EAST", "SOUTH", "WEST", "BC_OTHER"],
+      "groups": [
+        {"key": "NORTH_SHORE", "label": "North Shore", "routes": "SeaBus", "corridors": ["NORTH_SHORE"],
+         "levers": ["Add a relief SeaBus sailing or hold 10-minute frequency from {start}",
+                    "Open extra SeaBus fare gates and staff the ramp",
+                    "Alert Lonsdale Quay bus bays to the arriving wave"]},
+        {"key": "EAST", "label": "East", "routes": "Expo Line · WCE · R5 · 14 · 4", "corridors": ["EAST"],
+         "levers": ["Request extra Expo Line trains / shorter headways from {start}",
+                    "Deploy platform crowd management on the Expo platforms",
+                    "Alert West Coast Express and the R5 to peak loads"]},
+        {"key": "SOUTH", "label": "South", "routes": "Canada Line · 3 · 8 · 10 · 17 · 20", "corridors": ["SOUTH"],
+         "levers": ["Request extra Canada Line trains from {start}",
+                    "Deploy crowd management at the Canada Line platforms and Granville entrance"]},
+        {"key": "WEST", "label": "West", "routes": "4 · 7 · 14 · 44 · 50 · 5", "corridors": ["WEST"],
+         "levers": ["Add 4 / 14 / 44 trips toward Kitsilano and UBC from {start}",
+                    "Staff the Cordova Street bus bays"]}
+      ],
+      "route_group_rules": [
+        ["burrard station", "EXCLUDE"], ["to downtown", "EXCLUDE"], ["waterfront", "EXCLUDE"], ["false creek", "WEST"],
+        ["seabus", "NORTH_SHORE"], ["lonsdale", "NORTH_SHORE"], ["lynn valley", "NORTH_SHORE"], ["seymour", "NORTH_SHORE"], ["blueridge", "NORTH_SHORE"],
+        ["expo line", "EAST"], ["west coast express", "EAST"], ["hastings", "EAST"], ["powell", "EAST"], ["nanaimo", "EAST"],
+        ["metrotown", "EAST"], ["new west", "EAST"], ["surrey", "EAST"], ["sfu", "EAST"], ["kootenay", "EAST"],
+        ["canada line", "SOUTH"], ["main", "SOUTH"], ["fraser", "SOUTH"], ["granville", "SOUTH"], ["oak", "SOUTH"],
+        ["victoria", "SOUTH"], ["knight", "SOUTH"], ["cambie", "SOUTH"], ["29th ave", "SOUTH"], ["marine dr", "SOUTH"],
+        ["ubc", "WEST"], ["dunbar", "WEST"], ["arbutus", "WEST"], ["english bay", "WEST"], ["stanley park", "WEST"],
+        ["false creek", "WEST"], ["blanca", "WEST"], ["macdonald", "WEST"]
+      ],
+      "route_group_default": "EXCLUDE",
+      "presets": [
+        ["2026-06-06", "June event Saturday"],
+        ["2025-12-05", "December Friday"],
+        ["2026-03-25", "Normal Wednesday"],
+        ["2026-03-28", "Normal Saturday"],
+        ["2026-07-25", "July Saturday (holdout)"]
+      ],
+      "default_date": "2026-03-25",
+      "replay_start": "08:30"
+    }
+  ],
+  "capacity_bus_equivalents": {
+    "_comment": "Approximate passengers per departure relative to a standard bus (~75): SkyTrain ~ 5x, SeaBus ~ 5x, West Coast Express ~ 12x.",
+    "3": 1, "1": 5, "4": 5, "2": 12, "715": 0
+  }
+}

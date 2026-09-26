@@ -40,6 +40,27 @@ with `local/run_local.py`, which uses the same `fg_core` formulas as the Databri
 
 First Boxing Day alert: **11:00 → eastbound strained at 13:00 (2 h lead time)**.
 
+## Same engine, three crowds (UBC and Waterfront added)
+
+| | Park Royal | UBC | Waterfront |
+|---|---|---|---|
+| Visits (after dedupe) | 5.4M | 8.0M | 8.1M |
+| Gone within 1 h of arriving (kernel) | 37% | 48% | 43% |
+| Gone within 2.5 h | 70% | 80% | 85% |
+| Surge days (≥ 1.4× normal) | 8 (Christmas shopping, Dec 5–Jan 6) | 5 (exam season, late Nov–early Dec) | 12 (June/July Saturdays, early Dec) |
+| Exit forecast R² +30 / +120 min | 0.97 / 0.94 | 0.99 / 0.93 | 0.99 / 0.97 |
+| Typical-week pattern R² | 0.64 | **−1.09** | 0.68 |
+| Spec formula (no today scaling) +120 min | 0.78 | **−0.13** | 0.79 |
+
+- **UBC is seasonal.** The Jul–Aug holdout is summer break, so the term-trained typical week is badly wrong
+  (R² −1.09). The egress model still scores 0.93–0.99 because it starts from the crowd actually on campus and
+  scales future arrivals by today's busyness. UBC's "normal" is therefore seasonal (same weekday ±4 weeks),
+  so an ordinary term Wednesday reads ~0.9× normal, not a surge.
+- **Waterfront is the most predictable** (R² ≥ 0.97 at every horizon): commuter-driven, short stays.
+  Service includes SkyTrain, SeaBus and West Coast Express, weighted by capacity (bus-equivalents).
+- Demo days: UBC exam-season Saturday 2025-12-06 (1.66×, first alert 10:30); Waterfront June event Saturday
+  2026-06-06 (1.86×, peak pressure 2.65×, first alert 09:00).
+
 ## Pitch framing that the data supports
 - *Arrivals are predictable, but arrivals aren't the operator's problem — the exit wave is.* FlowGuard turns
   arrivals + learned dwell into **departures by direction**, 2 h ahead, R² ≥ 0.94, and compares them with the

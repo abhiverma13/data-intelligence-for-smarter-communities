@@ -22,18 +22,23 @@ STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="FlowGuard")
 
 
+POI_PATTERN = "^(" + "|".join(logic.POI_BY_KEY) + ")$"
+
+
 @app.on_event("startup")
 def warm_cache():
-    """Pre-load the day list, model metrics and demo days in the background so the demo is instant."""
+    """Pre-load day lists, model metrics and every POI's demo days in the background so the demo is instant."""
     def run():
-        for name, fn in [("days", cache.days), ("model", cache.model)] + [
-            (d, lambda d=d: cache.day(d)) for d, _ in logic.PRESETS
-        ]:
-            try:
-                fn()
-                log.info("warmed %s from %s", name, cache.last_source["source"])
-            except Exception as e:  # noqa: BLE001
-                log.warning("warm-up of %s failed: %s", name, e)
+        for poi in logic.POIS:
+            k = poi["key"]
+            jobs = [("days", lambda k=k: cache.days(k)), ("model", lambda k=k: cache.model(k))] + [
+                (d, lambda k=k, d=d: cache.day(k, d)) for d, _ in poi["presets"]]
+            for name, fn in jobs:
+                try:
+                    fn()
+                    log.info("warmed %s %s from %s", k, name, cache.last_source["source"])
+                except Exception as e:  # noqa: BLE001
+                    log.warning("warm-up of %s %s failed: %s", k, name, e)
     threading.Thread(target=run, daemon=True).start()
 
 
@@ -47,19 +52,24 @@ def health():
     return {"status": "ok", "data_mode": cache.DATA_MODE, "last_source": cache.last_source["source"]}
 
 
+@app.get("/api/pois")
+def pois():
+    return logic.pois_payload()
+
+
 @app.get("/api/days")
-def days():
+def days(poi: str = Query(logic.DEFAULT_POI, pattern=POI_PATTERN)):
     try:
-        return cache.days()
+        return cache.days(poi)
     except Exception as e:  # noqa: BLE001
         log.exception("days failed")
         return _error(503, f"Day list unavailable ({type(e).__name__}).")
 
 
 @app.get("/api/day")
-def day(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$")):
+def day(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"), poi: str = Query(logic.DEFAULT_POI, pattern=POI_PATTERN)):
     try:
-        payload = cache.day(date)
+        payload = cache.day(poi, date)
     except KeyError:
         return _error(404, f"No data for {date} in this mode.")
     except Exception as e:  # noqa: BLE001
@@ -69,9 +79,9 @@ def day(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$")):
 
 
 @app.get("/api/model")
-def model():
+def model(poi: str = Query(logic.DEFAULT_POI, pattern=POI_PATTERN)):
     try:
-        return cache.model()
+        return cache.model(poi)
     except Exception as e:  # noqa: BLE001
         log.exception("model failed")
         return _error(503, f"Model metrics unavailable ({type(e).__name__}).")
