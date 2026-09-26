@@ -443,6 +443,7 @@ def build_timeline(pr_slots: pd.DataFrame, pr_slot_corridor: pd.DataFrame, forec
                 for x, ns, q in zip(gap, no_service, quiet)
             ]
         t["typical_load"] = [typical_load[(g, s)] for s in sdt]
+        t["typical_demand"] = typical_dem[g]
         frames.append(t)
     tl = pd.concat(frames, ignore_index=True)
     actions = [_action(r) for r in tl.itertuples(index=False)]

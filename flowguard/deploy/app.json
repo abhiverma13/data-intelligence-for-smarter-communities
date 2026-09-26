@@ -1,0 +1,11 @@
+{
+  "name": "flowguard",
+  "description": "FlowGuard: Park Royal exit-wave console for TransLink operations",
+  "resources": [
+    {
+      "name": "sql-warehouse",
+      "description": "Serverless Starter Warehouse for reading the gold tables",
+      "sql_warehouse": { "id": "02696d2b2f33da73", "permission": "CAN_USE" }
+    }
+  ]
+}

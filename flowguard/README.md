@@ -43,6 +43,22 @@ All thresholds live in `pipeline/fg_settings.py` and all formulas in `pipeline/f
 imported by the notebooks and by `local/run_local.py`, so Databricks and local runs give identical numbers).
 Verified numbers for the pitch: [docs/data_findings.md](docs/data_findings.md).
 
+| `90_app_grants` | grants the app's service principal read access to `gold` |
+
+The Job `flowguard-refresh` ([deploy/job.json](deploy/job.json)) chains 01 → 07 on serverless.
+
+## App
+
+`app/` is a Databricks App: FastAPI (`app.py`, `server/`) + a static page (`static/index.html`, `app.js`,
+`styles.css`, Chart.js bundled in `static/vendor/`). `DATA_MODE=live` reads the gold tables through the SQL
+warehouse and falls back automatically to the bundled snapshot `static/data/*.json`; `DATA_MODE=snapshot`
+never touches the warehouse. Scenario Lab maths runs in the browser (`?selftest=1` checks it matches the server).
+
+```
+python flowguard/local/run_local.py && python flowguard/local/build_snapshot.py    # refresh the snapshot
+cd flowguard/app && .venv/Scripts/python -m uvicorn app:app --port 8000            # DATA_MODE=snapshot to run offline
+```
+
 ## Local run
 
 ```

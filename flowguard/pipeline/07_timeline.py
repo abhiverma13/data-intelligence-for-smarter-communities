@@ -53,6 +53,7 @@ write_gold(
      "pressure": "Current occupancy vs normal for this weekday and slot",
      "signature": "Mobility signature of the current crowd",
      "typical_load": "Normal forecast departures per scheduled trip for this group and service day type",
+     "typical_demand": "Normal daytime forecast departures for this group; below half of it the group is never escalated",
      "action_text": "Recommended operator action if any horizon is Strained or Critical, else null",
      "action_priority": "Peak gap within the flagged window (higher = more urgent)",
      **h_comments},

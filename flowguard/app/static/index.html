@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FlowGuard · Park Royal</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M7 20c4 0 5-8 9-8s5 8 9 8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><path d="M6 20c4 0 5.5-8 10-8s6 8 10 8" /></svg>
+      </div>
+      <div>
+        <h1>FlowGuard</h1>
+        <p class="tagline">Park Royal exit-wave console · TransLink operations</p>
+      </div>
+    </div>
+
+    <div class="controls">
+      <label class="field">
+        <span class="field-label">Day</span>
+        <select id="day" aria-label="Day"></select>
+      </label>
+
+      <div class="replay" role="group" aria-label="Replay">
+        <button id="play" class="btn icon" title="Play / pause (Space)" aria-label="Play">
+          <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z"/></svg>
+          <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+        </button>
+        <button id="speed" class="btn small" title="Replay speed">1×</button>
+        <input id="scrub" type="range" min="0" max="47" step="1" value="18" aria-label="Replay time">
+        <div class="clock">
+          <span id="clock">09:00</span>
+          <span id="clockDate"></span>
+        </div>
+      </div>
+
+      <button id="labBtn" class="btn">Scenario Lab</button>
+      <button id="askBtn" class="btn" hidden>Ask FlowGuard</button>
+      <button id="themeBtn" class="btn icon" title="Light / dark" aria-label="Toggle light or dark theme">
+        <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9A9 9 0 0 0 12 3zm0 16V5a7 7 0 0 1 0 14z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <main class="layout" id="main">
+    <section class="col-side">
+      <article class="card" id="pressureCard">
+        <h2>Current pressure</h2>
+        <div class="hero"><span id="pressureVal">–</span><span class="hero-unit">× normal</span></div>
+        <div id="pressureChip" class="chip-row"></div>
+        <p class="caption" id="pressureCaption"></p>
+        <div id="spark" class="spark" aria-hidden="true"></div>
+      </article>
+
+      <article class="card" id="sigCard">
+        <h2>Mobility signature</h2>
+        <div id="sigLabel" class="sig-label">–</div>
+        <ul id="sigInd" class="indicators"></ul>
+      </article>
+
+      <article class="card" id="catchCard">
+        <h2>Regional catchment <span class="h2-sub">last 2 h vs normal</span></h2>
+        <div id="offNS" class="kpi"></div>
+        <div id="catch" class="catch"></div>
+      </article>
+    </section>
+
+    <section class="col-main">
+      <article class="card action-card" id="actionCard" aria-live="polite"></article>
+
+      <article class="card" id="radarCard">
+        <div class="card-head">
+          <h2>Transit pressure radar <span class="h2-sub">exit wave, index: normal-day peak = 100</span></h2>
+          <ul class="legend" id="radarLegend">
+            <li><span class="sw sw-actual"></span>Actual exits</li>
+            <li><span class="sw sw-forecast"></span>Forecast from now</li>
+            <li><span class="sw sw-earlier"></span>Forecast made 60 min earlier</li>
+            <li><span class="sw sw-usual"></span>Normal day</li>
+          </ul>
+        </div>
+        <div class="chartbox"><canvas id="radar" aria-label="Exit wave chart"></canvas></div>
+      </article>
+
+      <article class="card" id="readyCard">
+        <h2>Transit readiness <span class="h2-sub">expected exit demand per scheduled trip vs normal</span></h2>
+        <div class="table-wrap"><table id="ready" class="ready"></table></div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="trust">
+    <details>
+      <summary>Why trust this?</summary>
+      <div class="trust-body" id="trustBody"></div>
+    </details>
+    <span id="source" class="source"></span>
+  </footer>
+
+  <aside id="lab" class="drawer" hidden aria-label="Scenario Lab">
+    <div class="drawer-head">
+      <h2>Scenario Lab</h2>
+      <button class="btn icon" data-close="lab" aria-label="Close">✕</button>
+    </div>
+    <p class="caption">Stress-test the next two hours. Everything recalculates instantly.</p>
+    <div class="presets">
+      <button class="btn" data-preset="boxing">Boxing Day replay</button>
+      <button class="btn" data-preset="event">Event ends 10 PM</button>
+      <button class="btn" data-preset="service">Service −30%</button>
+      <button class="btn ghost" data-preset="reset">Reset</button>
+    </div>
+    <label class="slider">
+      <span>Crowd size <output id="crowdOut">0%</output></span>
+      <input id="crowd" type="range" min="-30" max="100" step="5" value="0">
+    </label>
+    <label class="slider">
+      <span>Scheduled service <output id="serviceOut">0%</output></span>
+      <input id="service" type="range" min="-50" max="50" step="5" value="0">
+    </label>
+    <div class="event">
+      <span class="field-label">Event lets out at</span>
+      <div class="event-row">
+        <select id="eventSlot" aria-label="Event end time"></select>
+        <select id="eventSize" aria-label="Event size">
+          <option value="0">No event</option>
+          <option value="0.25">Small (¼ of a normal peak slot)</option>
+          <option value="0.5">Medium (½ of a normal peak slot)</option>
+          <option value="1">Large (a full normal peak slot)</option>
+        </select>
+      </div>
+      <p class="caption">Extra exits: 60% in that slot, 30% the next, 10% the one after, split by today's corridor mix.</p>
+    </div>
+  </aside>
+
+  <aside id="ask" class="drawer" hidden aria-label="Ask FlowGuard">
+    <div class="drawer-head">
+      <h2>Ask FlowGuard</h2>
+      <button class="btn icon" data-close="ask" aria-label="Close">✕</button>
+    </div>
+    <p class="caption">Natural-language questions over the gold tables (Databricks Genie).</p>
+    <form id="askForm" class="ask-form">
+      <input id="askInput" type="text" placeholder="Which days had the highest surge ratio?" autocomplete="off">
+      <button class="btn primary" type="submit">Ask</button>
+    </form>
+    <div id="askOut" class="ask-out"></div>
+  </aside>
+
+  <script src="/static/vendor/chart.umd.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -10,18 +10,12 @@ command:
 
 env:
   - name: DATABRICKS_WAREHOUSE_ID
-    value: ""          # SQL Warehouses → your warehouse → Connection details (last segment of HTTP path)
+    valueFrom: sql-warehouse   # the app resource named "sql-warehouse" (see flowguard/deploy/app.json)
   - name: CATALOG
-    value: "flowguard" # "workspace" if 01_setup_uc fell back
+    value: "flowguard"
   - name: SCHEMA
-    value: "gold"      # "flowguard_gold" if 01_setup_uc fell back
+    value: "gold"
   - name: GENIE_SPACE_ID
-    value: ""          # stretch: Genie space id from its URL (/genie/rooms/<id>)
+    value: ""                  # stretch: Genie space id from its URL (/genie/rooms/<id>)
   - name: DATA_MODE
-    value: "live"      # live = read gold via SQL warehouse; snapshot = bundled static/data/*.json
-
-resources:
-  - name: sql-warehouse
-    sql_warehouse:
-      id: ""           # same warehouse id as above
-      permission: CAN_USE
+    value: "live"              # live = gold tables via SQL warehouse, auto-fallback to static/data snapshot
