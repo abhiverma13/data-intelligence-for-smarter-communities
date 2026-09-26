@@ -15,7 +15,7 @@ from .config import table
 from .logic import CORRIDOR_COLS, SLOT_COLS, TIMELINE_COLS, is_future
 from .sql import run_query
 
-DAY_COLS = "date, day_type, service_day_type, arrivals, surge_ratio, is_surge, peak_pressure, label"
+DAY_COLS = "date, day_type, service_day_type, arrivals, surge_ratio, is_surge, peak_pressure, label, night_ratio, night_unusual"
 
 
 def _norm(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

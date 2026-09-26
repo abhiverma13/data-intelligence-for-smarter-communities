@@ -313,9 +313,16 @@ window.FlowGuardMap = (function () {
     if (ringEl) ringEl.classList.toggle("pulse", lvl === "High" || lvl === "Severe" || lvl === "Elevated");
     layers.hub.dot.setStyle({ color: col("--surface"), fillColor: col("--accent") });
 
+    // after-hours watch (00:00–06:00 presence vs a normal night; volume only), same signal as the radar band
+    const n = day.night;
+    const night = !n || n.ratio == null ? ""
+      : n.unusual
+        ? `<div class="ah-badge unusual" title="Overnight presence 00:00–06:00 vs a normal night. Based on activity volume only.">
+             <span class="dot">${fg.ICONS.bang}</span>${day.future ? "Unusual overnight presence expected" : "Unusual overnight presence"} · ${n.ratio.toFixed(1)}×</div>`
+        : `<div class="ah-badge" title="Overnight presence 00:00–06:00 vs a normal night">After hours · ${n.ratio.toFixed(1)}× a normal night</div>`;
     kpiEl.innerHTML = `<div class="caption">${esc(day.poi.name)} ${day.future ? "expected" : "now"}</div>
       <div class="kpi-row"><b>${p && p.pressure != null ? p.pressure.toFixed(1) + "×" : "–"}</b>${lvl ? fg.chip(lvl) : ""}</div>
-      <div class="caption">on-site crowd vs normal</div>`;
+      <div class="caption">on-site crowd vs normal</div>${night}`;
     if (needFit && host.offsetWidth) { needFit = false; fit(); }
   }
 

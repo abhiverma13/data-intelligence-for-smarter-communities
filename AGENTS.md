@@ -45,8 +45,8 @@ flowguard/
    `local/run_local.py` calls the same functions. Never re-implement a formula inside a notebook.
 2. **The browser mirrors `fg_core`.** `app/static/app.js` (`view`, `actionsAt`) rescales the server's gap for
    scenarios and re-implements the readiness/action logic so the Scenario Lab can recompute instantly;
-   `app/static/map.js` consumes that same `view()` so the map can never disagree with the readiness table.
-   `app/server/logic.py` holds copies of the
+   `app/static/map.js` consumes that same `view()` (exported as `window.FG`), so the map can never disagree with
+   the readiness table. `app/server/logic.py` holds copies of the
    thresholds. If you change readiness or action logic in `fg_core`/`fg_settings`, update both, then run the
    self-test (see Verification).
 3. **Timestamps are Vancouver local clock time**, despite the `Z` suffix in the raw data. They are stored as
@@ -91,6 +91,17 @@ flowguard/
   feed covers. Crowd = median of analog past days (same holiday last year → same week last year ±1 → typical weekday);
   service = the published schedule of that exact date (`service_for_date`). The UI marks them with a violet
   OUTLOOK badge, a dashed explainer bar and dashed card borders; never present them as observed data.
+- **After-hours watch (security):** `days.night_ratio` = mean occupancy 00:00–06:00 vs a normal night for that
+  weekday (seasonal for UBC); `night_unusual` at ≥ 1.5×. Volume only — never use visitor origin as a security signal.
+  The radar spans 00:00–24:00 with the after-hours band (grey, amber when unusual).
+- **Operator briefing** (`briefingHtml` in app.js): printable page built client-side from the current day (scenario
+  included); alert windows are Strained/Critical runs at +30 min with first-flagged lead time.
+- **Ask FlowGuard (Genie chat):** for operators *and* riders/public users. Space setup text and verified example SQL
+  are in `flowguard/docs/genie_instructions.md`; the app shows the Ask button only when `GENIE_SPACE_ID` is set in
+  `app/app.yaml`. The drawer is a chat (input pinned at the bottom, user and FlowGuard bubbles). `POST
+  /api/genie/stream` (server-sent events, `genie.ask_stream`) streams Genie's real progress states; Genie's API does
+  not stream answer text, so the client types the final answer out, then shows the table and SQL. It falls back to
+  `POST /api/genie/ask` if streaming fails.
 - Occupancy excludes stays over 24 h. "No service" is shown when nothing is scheduled. Route groups are never
   escalated below half the usual daytime demand.
 
@@ -109,6 +120,7 @@ flowguard/
   | Branch | `deploy/harsha-workspace-b` | `main` |
   | App | `flowguard-harsha` (own service principal) | `flowguard` |
   | App reads | `flowguard.gold` (shared, built by Verma's pipeline) | `flowguard.gold` |
+  | Genie space | `01f1b96d…aacc` (Verma's, shared; app SP needs `CAN_RUN` from `90_app_grants`) | same |
   | Job / notebooks write | `flowguard-refresh-harsha` → `workspace.flowguard_*` (private copy) | `flowguard-refresh` → `flowguard.*` |
   | Code path | `/Workspace/Users/aminharsh317@gmail.com/data-intelligence-for-smarter-communities` | `/Workspace/Users/a.verma1304@gmail.com/…` |
 
@@ -119,7 +131,10 @@ flowguard/
     shared tables. Don't run `flowguard-refresh-harsha` unless you mean to rebuild that private copy. Keep this pin
     when merging `main`, which prefers the `flowguard` catalog.
   - Pick up Verma's work with `git merge origin/main` into this branch. Keep Harsha's `app.yaml`, `00_config.py`,
-    `90_app_grants.py` and the job name/paths in `job.json`. Never push this branch's config to `main`.
+    `90_app_grants.py`, `app.json`, the job name/paths in `job.json` and this AGENTS.md. **Main's versions of these
+    merge in without a conflict** (main already contains this branch), so merge with `--no-commit`, then
+    `git checkout HEAD -- <those files>` and re-apply only main's real changes (e.g. `GENIE_SPACE_ID`). Never push
+    this branch's config to `main`.
   - Deploy: `databricks sync ./flowguard <code path>/flowguard -p flowguard-b --exclude ".venv/**" --exclude
     "local/data/**" --exclude "**/__pycache__/**"`, then `databricks apps deploy flowguard-harsha --source-code-path
     <code path>/flowguard/app -p flowguard-b`. Large pushes to GitHub may need `git -c http.postBuffer=524288000 push`.
@@ -160,7 +175,8 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
   Headless: `chrome --headless=new --virtual-time-budget=8000 --dump-dom "<url>"`.
 - **Map view:** the hero card toggles `Radar | Map` (default map; `?view=radar` for the chart). The map reads the
   same `view()` maths, so the self-test also reports `map_mismatch=0`. Check every POI, one outlook date, and a
-  location switch in the page (layers, end labels, cards and the KPI card must all change). Geometry is static, so only re-run
+  location switch in the page (layers, end labels, cards and the KPI card must all change). After hours shows as the
+  band on the radar and as a badge in the map's KPI card (grey when normal, amber pill when unusual). Geometry is static, so only re-run
   `build_map_geometry.py` when route-group rules or the GTFS feed change.
 - **Visual check:** after UI changes, take screenshots with
   `chrome --headless=new --window-size=1440,1250 --screenshot=out.png "<url>&theme=dark"`, and repeat with
@@ -194,9 +210,10 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
 
 ## Status and next steps
 
-Done: pipeline 01–08, egress model with MLflow, GTFS service, readiness timeline, future-date outlook, app (live +
-snapshot), deploy and job configs, Leaflet map view for every POI (real GTFS routes, labelled corridor ends, flow dots + per-route exit-wave cards,
-Radar | Map toggle). Harsha's `flowguard-harsha` is deployed from `deploy/harsha-workspace-b` and reads the shared
+Done: pipeline 01–08, egress model with MLflow, GTFS service, readiness timeline, future-date outlook, after-hours
+watch, app (live + snapshot), deploy and job configs, Leaflet map view for every POI (real GTFS routes, labelled
+corridor ends, flow dots + per-route exit-wave cards, Map | Radar toggle), operator briefing, and Ask FlowGuard: a
+Genie chat that serves riders and the public as well as operators. Harsha's `flowguard-harsha` is deployed from `deploy/harsha-workspace-b` and reads the shared
 `flowguard.gold`.
 Pipeline and app are multi-POI (Park Royal, UBC, Waterfront): the app has a location switcher, every endpoint takes
 `?poi=`, and the snapshot lives in `app/static/data/<poi>/`.
@@ -209,9 +226,9 @@ are a self-assessment as of Sept 25 evening; use them to decide what to work on,
 |---|---|---|---|---|
 | Data analysis in Databricks (patterns across POIs; segmentation, visualization, modelling, prediction) | 15 | 11–13 | 3 POIs; segmentation (corridors, day types, mobility signature); exit forecast R² 0.94–0.99 vs typical week 0.64 (UBC −1.09); MLflow run per POI; findings in `data_findings.md` | Analysis isn't *visible* in Databricks: notebooks 00–08 mostly `print`, only 2 `display()` calls, no charts or dashboard |
 | Extra credit: well-structured pipelines / reproducible analysis | +5 | +4–5 | Medallion tables in UC, job DAG, one `fg_core`/`fg_settings` shared by notebooks and `run_local.py` | — |
-| Actionable insights in a separate tool (interactive, visually clear, tailored user, grounded in data, plus what other data would add) | 25 | 21–24 | Live Databricks App on gold; action card with levers and lead time; map; Scenario Lab; outlook; "Why trust this?" backtest | No "what other data would improve this" story; Genie drawer unused (`GENIE_SPACE_ID` empty); app auto-stops 24 h after start |
+| Actionable insights in a separate tool (interactive, visually clear, tailored user, grounded in data, plus what other data would add) | 25 | 22–24 | Live Databricks App on gold; action card with levers and lead time; map; Scenario Lab; outlook; "Why trust this?" backtest; Ask FlowGuard chat (Genie) for operators and riders; operator briefing | App auto-stops 24 h after start; the pitch must now name two users (operators, riders) without losing focus |
 | Originality (5) & impact clearly communicated (5) | 10 | 7–9 | Dwell → directional exit wave vs scheduled capacity, well beyond a dashboard | Impact must be stated in the pitch (e.g. Boxing Day: eastbound strain flagged 2 h ahead, on a holiday schedule) |
-| Presentation (problem, solution, impact, next steps) | 5 | 2–4 | — | No pitch script yet (`docs/pitch_script.md` is referenced but doesn't exist) |
+| Presentation (problem, solution, impact, next steps) | 5 | 3–5 | 8-slide deck with a timed script in the speaker notes (claude.ai artifact, private to Harsha until shared) | Rehearse; record a backup demo video |
 
 Total estimate: 44–52 / 55, +3–5 extra credit.
 
@@ -221,8 +238,8 @@ Next, in order of points per hour:
 2. **Make the analysis visible in Databricks**: an AI/BI dashboard or a short `09_insights` notebook with `display()`
    charts (egress kernel, backtest R² vs typical week per POI, surge-day calendar, corridor mix). Read-only over gold;
    no new formulas outside `fg_core`. Keep the MLflow experiment ready to show.
-3. **Genie space** over the gold tables: set `GENIE_SPACE_ID` in `app/app.yaml` and `90_app_grants`, re-run the
-   grants notebook, redeploy.
+3. **Genie on this app**: `GENIE_SPACE_ID` is set (Verma's shared space). Run `90_app_grants` so `flowguard-harsha`'s
+   service principal gets `CAN_RUN`, then redeploy and ask a question in the app.
 4. **"With more data" slide**: automatic passenger counts, GTFS-RT, event calendars, weather; plus the security
    extension (overnight arrivals are 33% out-of-region vs 15% in daytime).
 5. **Sunday 9 AM**: restart `flowguard-harsha`, have the human confirm `/api/health` → `last_source=live`, keep a

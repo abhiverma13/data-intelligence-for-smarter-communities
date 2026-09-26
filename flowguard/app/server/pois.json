@@ -9,6 +9,7 @@
       "file": "synthetic_park_royal_mall.csv",
       "lat": 49.3265, "lon": -123.138,
       "stop_radius_m": 400, "terminating_radius_m": 600,
+      "security_contact": "Park Royal security and West Vancouver Police",
       "hub": "Park Royal exchange",
       "corridors": [
         {"key": "NS_WEST", "label": "West Vancouver"},
@@ -64,6 +65,7 @@
       "lat": 49.2606, "lon": -123.246,
       "stop_radius_m": 800, "terminating_radius_m": 900,
       "baseline_weeks": 4,
+      "security_contact": "UBC Campus Security",
       "hub": "UBC Exchange",
       "corridors": [
         {"key": "CAMPUS", "label": "UBC campus"},
@@ -118,6 +120,7 @@
       "file": "synthetic_data_waterfront.csv",
       "lat": 49.2857, "lon": -123.1115,
       "stop_radius_m": 400, "terminating_radius_m": 800,
+      "security_contact": "Metro Vancouver Transit Police",
       "hub": "Waterfront Station",
       "corridors": [
         {"key": "DOWNTOWN", "label": "Downtown/West End"},

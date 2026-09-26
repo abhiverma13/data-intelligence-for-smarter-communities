@@ -173,6 +173,17 @@ def build_slots(slot_agg: pd.DataFrame, corr_agg: pd.DataFrame, ref_day: pd.Data
         for lbl, surge in zip(ref_label, days["is_surge"])
     ]
 
+    # after-hours watch: overnight presence (00:00–06:00) vs a normal night for that weekday
+    night = out[out["slot_of_day"] < S.NIGHT_SLOTS].groupby("date")["occupancy"].mean()
+    days["night_presence"] = night.reindex(days["date"]).to_numpy()
+    if weeks:
+        usual_n = days.groupby("day_type")["night_presence"].transform(
+            lambda x: x.rolling(2 * weeks + 1, center=True, min_periods=weeks + 1).median())
+    else:
+        usual_n = days.groupby("day_type")["night_presence"].transform("median")
+    days["night_ratio"] = days["night_presence"] / usual_n
+    days["night_unusual"] = days["night_ratio"] >= S.NIGHT_UNUSUAL_RATIO
+
     return out.reset_index(drop=True), slot_corridor, days
 
 
@@ -584,6 +595,7 @@ def build_outlook(slots, slot_corridor, timeline, days, departures, calendar, ca
                 "trailing_dwell", "stay_ratio", "visitor_ratio"]
     corr_idx = pd.MultiIndex.from_product([corridors, range(S.SLOTS_PER_DAY)], names=["corridor", "slot_of_day"])
     past_ratio = days.assign(date=pd.to_datetime(days["date"])).set_index("date")["surge_ratio"]
+    past_night = days.assign(date=pd.to_datetime(days["date"])).set_index("date")["night_ratio"]
 
     out_slots, out_corr, out_days = [], [], []
     for date in dates:
@@ -599,7 +611,8 @@ def build_outlook(slots, slot_corridor, timeline, days, departures, calendar, ca
         shown = sorted(analogs)
         out_days.append({"poi": poi["key"], "date": date, "day_type": S.DAY_TYPES[date.dayofweek], "method": method,
                          "analog_dates": ", ".join(f"{d:%Y-%m-%d}" for d in shown[:6]) + (" …" if len(shown) > 6 else ""),
-                         "surge_ratio": float(past_ratio.reindex(shown).median())})
+                         "surge_ratio": float(past_ratio.reindex(shown).median()),
+                         "night_ratio": float(past_night.reindex(shown).median())})
     o_slots = pd.concat(out_slots, ignore_index=True).sort_values("slot_ts").reset_index(drop=True)
     o_slots["service_day_type"] = sdt_arr
     o_slots["pressure_level"] = [level(p, S.PRESSURE_LEVELS) for p in o_slots["pressure"]]
@@ -610,6 +623,7 @@ def build_outlook(slots, slot_corridor, timeline, days, departures, calendar, ca
     # days: expected surge ratio = median surge ratio of the analog days (each vs its own normal)
     o_days = pd.DataFrame(out_days)
     o_days["arrivals"] = o_slots.groupby("date")["arrivals"].sum().reindex(o_days["date"]).to_numpy()
+    o_days["night_unusual"] = o_days["night_ratio"] >= S.NIGHT_UNUSUAL_RATIO
     o_days["is_surge"] = o_days["surge_ratio"] >= poi.get("surge_threshold", S.SURGE_RATIO_THRESHOLD)
     o_days["service_day_type"], lbl = service_day_types(pd.DatetimeIndex(o_days["date"]), ref_day)
     o_days["label"] = [x if x else ("Expected surge" if s else "") for x, s in zip(lbl, o_days["is_surge"])]

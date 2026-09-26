@@ -167,6 +167,56 @@ def ask(question: str, conversation_id: Optional[str] = None, space_id: Optional
     return parsed
 
 
+# Friendly text for Genie's message states, shown while the answer is being prepared.
+STATUS_TEXT = {
+    "SUBMITTED": "Sending your question…",
+    "FILTERING_CONTEXT": "Finding the relevant tables…",
+    "FETCHING_METADATA": "Reading the table descriptions…",
+    "ASKING_AI": "Understanding your question…",
+    "PENDING_WAREHOUSE": "Waking up the SQL warehouse…",
+    "EXECUTING_QUERY": "Running the query…",
+    "COMPLETED": "Writing the answer…",
+}
+
+
+def ask_stream(question: str, conversation_id: Optional[str] = None, space_id: Optional[str] = None,
+               poll_s: float = 1.0, timeout_s: float = 120):
+    """Like ask(), but yields events as Genie works: {"type": "status", ...} on every state change, then
+    {"type": "result", ...} (same fields as ask()). Genie's API does not stream answer text, so the
+    progress states are what can be streamed; the client types the final text out."""
+    sid = space_id or GENIE_SPACE_ID
+    if not sid:
+        raise GenieSpaceNotConfigured("No Genie space is configured (GENIE_SPACE_ID in app.yaml).")
+    if not conversation_id:
+        start = _api(f"/api/2.0/genie/spaces/{sid}/start-conversation", method="POST", body={"content": question})
+        cid = start.get("conversation_id") or (start.get("conversation") or {}).get("id")
+        mid = start.get("message_id") or (start.get("message") or {}).get("id")
+    else:
+        cid = conversation_id
+        msg = _api(f"/api/2.0/genie/spaces/{sid}/conversations/{cid}/messages", method="POST", body={"content": question})
+        mid = msg.get("id") or msg.get("message_id")
+    if not cid or not mid:
+        yield {"type": "result", "status": "FAILED", "error": "Genie did not return conversation/message ids",
+               "conversation_id": cid, "text": None, "sql": None, "columns": None, "rows": None}
+        return
+    yield {"type": "status", "status": "SUBMITTED", "text": STATUS_TEXT["SUBMITTED"], "conversation_id": cid}
+
+    path = f"/api/2.0/genie/spaces/{sid}/conversations/{cid}/messages/{mid}"
+    deadline, last, msg = time.time() + timeout_s, None, {}
+    while time.time() < deadline:
+        msg = _api(path)
+        state = msg.get("status") or msg.get("state") or ""
+        if state != last:
+            last = state
+            yield {"type": "status", "status": state, "text": STATUS_TEXT.get(state, "Working…")}
+        if state in _TERMINAL_STATES:
+            break
+        time.sleep(poll_s)
+    parsed = _parse_message(sid, msg)
+    parsed["space_id"] = sid
+    yield {"type": "result", **parsed}
+
+
 def space_info() -> Dict[str, Any]:
     """Return basic metadata about the configured Genie space (used by frontend)."""
     if not GENIE_SPACE_ID:

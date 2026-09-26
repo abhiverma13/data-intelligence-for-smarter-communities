@@ -24,7 +24,8 @@ from server.logic import CORRIDOR_COLS, POIS, SLOT_COLS, TIMELINE_COLS  # noqa: 
 
 GOLD = ROOT / "local" / "data" / "gold"
 OUT = ROOT / "app" / "static" / "data"
-DAY_COLS = ["date", "day_type", "service_day_type", "arrivals", "surge_ratio", "is_surge", "peak_pressure", "label"]
+DAY_COLS = ["date", "day_type", "service_day_type", "arrivals", "surge_ratio", "is_surge", "peak_pressure", "label",
+            "night_ratio", "night_unusual"]
 
 
 def rows(df: pd.DataFrame) -> list:
@@ -77,7 +78,7 @@ def main():
     for poi in POIS:
         k = poi["key"]
         days = days_all[days_all["poi"] == k]
-        wanted = {d for d, _ in poi["presets"]} | set(days.loc[(days["label"] != "") | days["is_surge"], "date"])
+        wanted = {d for d, _ in poi["presets"]} | set(days.loc[(days["label"] != "") | days["is_surge"] | days["night_unusual"], "date"])
         normal = days[days["surge_ratio"].between(0.95, 1.05) & (days["label"] == "")]
         for dt in ["Wed", "Fri", "Sat", "Sun"]:
             wanted |= set(normal[normal["day_type"] == dt]["date"].iloc[5:6])

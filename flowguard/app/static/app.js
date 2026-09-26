@@ -7,7 +7,10 @@ const $ = (s) => document.querySelector(s);
 const SLOT_MIN = 30;
 const HORIZONS = [1, 2, 3, 4];
 const SEVERE = new Set(["Strained", "Critical"]);
-const CHART_FROM = 12; // radar x-axis starts at 06:00
+const CHART_FROM = 0;  // radar x-axis: full 24 h (00:00–06:00 is the after-hours band)
+const DAY_FROM = 12;   // sparkline and event times start at 06:00
+const NIGHT_SLOTS = 12; // after hours = 00:00–06:00
+const CANVAS_FONT = 'system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 const DAY_NAMES = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
 
 const ICONS = {
@@ -128,7 +131,7 @@ function renderPressure() {
   $("#pressureChip").innerHTML = chip(s.level);
   $("#pressureCaption").textContent = `${d.future ? "Expected people" : "People"} on site vs a normal ${DAY_NAMES[d.day_type]} at ${s.t}`;
 
-  const from = Math.min(CHART_FROM, state.slot), pts = d.slots.slice(from, state.slot + 1).map((x) => x.pressure ?? 0);
+  const from = Math.min(DAY_FROM, state.slot), pts = d.slots.slice(from, state.slot + 1).map((x) => x.pressure ?? 0);
   const all = d.slots.map((x) => x.pressure ?? 0);
   const ymax = Math.max(2.5, ...all), ymin = 0.5, W = 320, H = 64, n = 47 - from;
   const X = (i) => (i / Math.max(n, 1)) * W, Y = (v) => H - ((Math.max(v, ymin) - ymin) / (ymax - ymin)) * H;
@@ -208,6 +211,34 @@ function radarData() {
   return { labels: idx.map(fmtSlot), actual, expected, usual, forecast, earlier, nowIdx: t - CHART_FROM };
 }
 
+const afterHours = {
+  id: "afterHours",
+  beforeDatasetsDraw(chart) {
+    const night = chart.$night;
+    if (!night) return;
+    const { ctx, chartArea: a, scales: { x } } = chart;
+    const x0 = x.getPixelForValue(0 - CHART_FROM), x1 = x.getPixelForValue(NIGHT_SLOTS - CHART_FROM);
+    ctx.save();
+    ctx.fillStyle = night.unusual ? css("--warning") : css("--muted");
+    ctx.globalAlpha = night.unusual ? 0.2 : 0.08;
+    ctx.fillRect(x0, a.top, x1 - x0, a.bottom - a.top);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = night.unusual ? css("--ink") : css("--muted");
+    ctx.font = `700 12px ${CANVAS_FONT}`;
+    ctx.textAlign = "left";
+    const lines = night.unusual
+      ? [`${night.future ? "Unusual overnight presence expected" : "Unusual overnight presence"}`,
+         `${night.ratio.toFixed(1)}× normal · 00:00–06:00`]
+      : ["After hours", night.ratio == null ? "" : `${night.ratio.toFixed(1)}× a normal night`];
+    lines.forEach((l, i) => ctx.fillText(l, x0 + 8, a.top + 16 + i * 16));
+    if (night.unusual) {
+      ctx.fillStyle = css("--warning");
+      ctx.fillRect(x0, a.top, 4, a.bottom - a.top);
+    }
+    ctx.restore();
+  },
+};
+
 const nowLine = {
   id: "nowLine",
   afterDatasetsDraw(chart) {
@@ -226,7 +257,7 @@ const nowLine = {
     ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = css("--ink");
-    ctx.font = `700 13px ${css("--font")}`;
+    ctx.font = `700 13px ${CANVAS_FONT}`;
     ctx.textAlign = "center";
     ctx.fillText("NOW", px, a.top - 6);
     ctx.restore();
@@ -283,7 +314,7 @@ function renderRadar() {
           y: { beginAtZero: true, grid: {}, border: { display: false }, ticks: { maxTicksLimit: 6 }, title: { display: true, text: "Exit index (normal peak = 100)" } },
         },
       },
-      plugins: [nowLine],
+      plugins: [afterHours, nowLine],
     });
     radarColors(radar);
   }
@@ -291,6 +322,7 @@ function renderRadar() {
   radar.data.labels = r.labels;
   ds[0].data = r.actual; ds[1].data = r.forecast; ds[2].data = r.earlier; ds[3].data = r.usual; ds[4].data = r.expected;
   radar.$now = r.nowIdx;
+  radar.$night = state.day.night ? { ...state.day.night, future: state.day.future } : null;
   radar.update();
 }
 
@@ -475,8 +507,10 @@ async function preset(name) {
 function openDrawer(id, open = true) {
   for (const d of ["lab", "ask"]) $(`#${d}`).hidden = !(open && d === id);
   $("#labBtn").classList.toggle("active", open && id === "lab");
-  document.body.classList.toggle("lab-open", open && id === "lab");
+  $("#askBtn").classList.toggle("active", open && id === "ask");
+  document.body.classList.toggle("drawer-open", open);
   if (radar) radar.resize();
+  if (open && id === "ask") setTimeout(() => $("#askInput").focus(), 50);
 }
 
 /** ?selftest=1 — with no scenario, client readiness must equal the server's for every slot/group/horizon. */
@@ -493,21 +527,252 @@ function selfTest() {
 }
 
 // ---------------------------------------------------------------- genie
-async function ask(q) {
-  const out = $("#askOut");
-  out.insertAdjacentHTML("afterbegin", `<div class="ask-q">${esc(q)}</div><div class="caption" id="askWait">Thinking…</div>`);
-  try {
-    const r = await getJSON("/api/genie/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q, conversation_id: state.genieConv }) });
-    state.genieConv = r.conversation_id || state.genieConv;
-    let html = r.error ? `<div class="caption">${esc(r.error)}</div>` : "";
-    if (r.text) html += `<div>${esc(r.text)}</div>`;
-    if (r.columns && r.rows) {
-      html += `<table><tr>${r.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>${r.rows.slice(0, 20).map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</table>`;
-    }
-    $("#askWait").outerHTML = html || '<div class="caption">No answer.</div>';
-  } catch (e) {
-    $("#askWait").outerHTML = `<div class="caption">${esc(e.message)}</div>`;
+/** Genie answers use light Markdown: escape everything, then allow **bold**, `code` and "- " bullet lists. */
+function miniMarkdown(text) {
+  const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  let html = "", inList = false;
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = line.match(/^\s*[-*]\s+(.*)$/);
+    if (m) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inline(m[1])}</li>`; continue; }
+    if (inList) { html += "</ul>"; inList = false; }
+    if (line.trim()) html += `<p>${inline(line)}</p>`;
   }
+  return html + (inList ? "</ul>" : "");
+}
+
+function genieChips() {
+  const n = poiName();
+  const qs = [
+    `What times should I avoid at ${n} on Saturdays?`,
+    `Which days in December 2026 are expected surge days at ${n}?`,
+    `Which route group at ${n} is most often Strained or Critical, and at what times?`,
+    `Which nights had unusual overnight presence at ${n}?`,
+    "Compare peak pressure at Park Royal, UBC and Waterfront on Saturdays",
+    "How accurate is the exit forecast at each location?",
+  ];
+  $("#askChips").innerHTML = qs.map((q) => `<button type="button" data-ask="${esc(q)}">${esc(q)}</button>`).join("");
+}
+
+const BOT_AVATAR = '<span class="bot-avatar" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 20c4 0 5.5-8 10-8s6 8 10 8" /></svg></span>';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function chatScroll() {
+  const log = $("#askOut");
+  log.scrollTop = log.scrollHeight;
+}
+
+function addMsg(role, html) {
+  $("#chatWelcome").hidden = true;
+  const el = document.createElement("div");
+  el.className = `msg ${role}`;
+  el.innerHTML = role === "bot" ? `<div class="msg-who">${BOT_AVATAR}FlowGuard</div><div class="msg-body">${html}</div>` : html;
+  $("#askOut").appendChild(el);
+  chatScroll();
+  return el;
+}
+
+function setBusy(on) {
+  state.genieBusy = on;
+  $("#askInput").disabled = on;
+  $("#askSend").disabled = on;
+  $("#askInput").placeholder = on ? "FlowGuard is answering…" : "Ask a question…";
+}
+
+/** Reveal the answer word by word (Genie returns the whole text at once), then the table and SQL. */
+async function typeOut(body, r) {
+  const words = String(r.text || "").split(/(\s+)/);
+  const step = Math.max(1, Math.ceil(words.length / 90));       // ~90 frames whatever the length
+  for (let i = step; i < words.length + step; i += step) {
+    body.innerHTML = miniMarkdown(words.slice(0, i).join(""));
+    chatScroll();
+    await sleep(22);
+  }
+  let extra = "";
+  if (r.columns && r.rows && r.rows.length) {
+    extra += `<div class="result"><table><tr>${r.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>${
+      r.rows.slice(0, 20).map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</table></div>`;
+  }
+  if (r.sql) extra += `<details><summary>Show the SQL Genie ran</summary><pre>${esc(r.sql)}</pre></details>`;
+  if (extra) body.insertAdjacentHTML("beforeend", extra);
+  chatScroll();
+}
+
+/** Stream Genie's progress (server-sent events); resolves with the final answer, or null if streaming failed. */
+async function streamGenie(q, onStatus) {
+  const resp = await fetch("/api/genie/stream", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: q, conversation_id: state.genieConv }),
+  });
+  if (!resp.ok || !resp.body) return null;
+  const reader = resp.body.getReader(), dec = new TextDecoder();
+  let buf = "", result = null;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, i).trim();
+      buf = buf.slice(i + 2);
+      if (!chunk.startsWith("data:")) continue;
+      const ev = JSON.parse(chunk.slice(5));
+      if (ev.conversation_id) state.genieConv = ev.conversation_id;
+      if (ev.type === "status") onStatus(ev.text);
+      if (ev.type === "result") result = ev;
+    }
+  }
+  return result;
+}
+
+async function ask(q) {
+  if (state.genieBusy || !q) return;
+  setBusy(true);
+  addMsg("user", esc(q));
+  const bot = addMsg("bot", '<div class="status"><span class="typing"><i></i><i></i><i></i></span><span class="st">Thinking…</span></div>');
+  const body = bot.querySelector(".msg-body");
+  const status = (text) => { const st = body.querySelector(".st"); if (st) st.textContent = text; };
+  try {
+    let r = null;
+    try { r = await streamGenie(q, status); } catch { r = null; }
+    if (!r) {                                                     // fallback: plain request
+      r = await getJSON("/api/genie/ask", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, conversation_id: state.genieConv }) });
+      state.genieConv = r.conversation_id || state.genieConv;
+    }
+    if (r.error && !r.text) {
+      bot.classList.add("error");
+      body.innerHTML = `<p>${esc(r.error)}</p>`;
+    } else if (!r.text && !(r.rows && r.rows.length)) {
+      body.innerHTML = "<p>No answer this time. Try rephrasing the question.</p>";
+    } else {
+      await typeOut(body, r);
+    }
+  } catch (e) {
+    bot.classList.add("error");
+    body.innerHTML = `<p>${esc(e.message)}</p>`;
+  } finally {
+    setBusy(false);
+    $("#askInput").focus();
+    chatScroll();
+  }
+}
+
+function newChat() {
+  if (state.genieBusy) return;
+  state.genieConv = null;
+  $("#askOut").querySelectorAll(".msg").forEach((m) => m.remove());
+  $("#chatWelcome").hidden = false;
+  $("#askInput").focus();
+}
+
+// ---------------------------------------------------------------- operator briefing
+/** Strained/Critical windows per route group, judged at +30 min, with how early they were first flagged. */
+function alertWindows() {
+  const d = state.day, out = [];
+  for (const g of d.group_order) {
+    const at = [];
+    for (let t = 0; t < 47; t++) at[t + 1] = view(g, t)[0];
+    let s = null;
+    for (let tau = 1; tau <= 48; tau++) {
+      const sev = tau < 48 && at[tau] && SEVERE.has(at[tau].ready);
+      if (sev && s === null) s = tau;
+      if (!sev && s !== null) {
+        const span = at.slice(s, tau);
+        let lead = 30;
+        for (let h = 4; h >= 1; h--) {
+          const t = s - h;
+          if (t >= 0 && SEVERE.has(view(g, t)[h - 1].ready)) { lead = h * SLOT_MIN; break; }
+        }
+        const gaps = span.map((x) => x.gap ?? 0), peak = Math.max(...gaps);
+        out.push({ g, start: s, end: tau, lead, stage: fmtMin(s * SLOT_MIN - 15), peak, peakAt: s + gaps.indexOf(peak),
+          worst: span.some((x) => x.ready === "Critical") ? "Critical" : "Strained" });
+        s = null;
+      }
+    }
+  }
+  return out.sort((a, b) => a.start - b.start || b.peak - a.peak);
+}
+
+function briefingHtml() {
+  const d = state.day, e = d.exit, P = d.poi, sc = state.sc;
+  const series = d.future ? e.expected : e.actual;
+  let pk = DAY_FROM;
+  for (let i = DAY_FROM; i < 48; i++) if ((series[i] ?? -1) > (series[pk] ?? -1)) pk = i;
+  let pp = 16;
+  for (let i = 16; i < 44; i++) if ((d.slots[i].pressure ?? -1) > (d.slots[pp].pressure ?? -1)) pp = i;
+  const usualPk = e.usual.indexOf(Math.max(...e.usual.filter((u) => u != null)));
+  const wins = alertWindows();
+  const groupPeaks = d.group_order.map((g) => {
+    let best = { idx: -1, t: 0, svc: null };
+    for (let t = DAY_FROM - 1; t < 47; t++) {
+      const v = view(g, t)[0];
+      if ((v.idx ?? -1) > best.idx) best = { idx: v.idx, t: t + 1, svc: v.svc };
+    }
+    return { g, ...best };
+  });
+  const n = d.night || {};
+  const scen = scenarioActive()
+    ? `<p class="note"><b>Scenario applied:</b> ${[sc.crowd ? `crowd ${sc.crowd > 0 ? "+" : ""}${sc.crowd}%` : "",
+        sc.service ? `service ${sc.service > 0 ? "+" : ""}${sc.service}%` : "",
+        sc.eventSize > 0 ? `event lets out at ${fmtSlot(sc.eventSlot)}` : ""].filter(Boolean).join(" · ")}. Figures below include it.</p>` : "";
+  const lvl = (l) => `<span class="lv lv-${(l || "").toLowerCase()}">${esc(l || "–")}</span>`;
+  const rows = wins.length ? wins.map((w) => {
+    const G = d.groups[w.g];
+    return `<tr><td class="nw">${fmtSlot(w.start)}–${fmtSlot(w.end)}</td><td>${esc(G.label)}<br><small>${esc(G.routes)}</small></td>
+      <td>${lvl(w.worst)}</td><td class="nw">${w.peak.toFixed(1)}× normal<br><small>at ${fmtSlot(w.peakAt)}</small></td><td class="nw">${w.lead} min ahead</td>
+      <td><ul>${G.levers.map((l) => `<li>${esc(l.replace("{start}", w.stage))}</li>`).join("")}</ul></td></tr>`;
+  }).join("") : `<tr><td colspan="6">No Strained or Critical periods ${d.future ? "expected" : "occurred"}; all route groups within normal load.</td></tr>`;
+  const nightText = n.ratio == null ? "No overnight data." : n.unusual
+    ? `<b>Unusual overnight presence${d.future ? " expected" : ""}: ${n.ratio.toFixed(1)}× a normal night</b> (00:00–06:00).
+       Consider an extra patrol or staff check; notify ${esc(P.security_contact)}. Based on activity volume only, never on who is present.`
+    : `Normal (${n.ratio.toFixed(1)}× a normal night, 00:00–06:00). No after-hours action needed.`;
+  const now = new Date().toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" });
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>FlowGuard briefing · ${esc(P.name)} · ${d.date}</title>
+<style>
+  body { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: #0b0b0b; background: #fff; margin: 28px auto; max-width: 900px; padding: 0 20px; }
+  h1 { font-size: 24px; margin: 0; } h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .05em; color: #52514e; margin: 22px 0 8px; border-bottom: 1px solid #e1e0d9; padding-bottom: 4px; }
+  .sub { color: #52514e; margin: 4px 0 0; } .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #eef; color: #4a3aa7; border: 1px dashed #4a3aa7; }
+  table { width: 100%; border-collapse: collapse; } th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid #e1e0d9; }
+  th { font-size: 12px; color: #6f6d68; text-transform: uppercase; letter-spacing: .04em; } .nw { white-space: nowrap; } small { color: #6f6d68; }
+  ul { margin: 0; padding-left: 18px; } .kv td:first-child { color: #52514e; width: 38%; }
+  .lv { font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid; } .lv-strained { color: #9a3c14; border-color: #ec835a; background: #fdeee7; } .lv-critical { color: #fff; background: #d03b3b; border-color: #d03b3b; }
+  .note { background: #f9f9f7; border-left: 4px solid #2a78d6; padding: 8px 12px; } .night { border-left: 4px solid ${n.unusual ? "#fab219" : "#c3c2b7"}; background: ${n.unusual ? "#fff8e6" : "#f9f9f7"}; padding: 8px 12px; }
+  .foot { margin-top: 24px; font-size: 12px; color: #6f6d68; } .bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #c3c2b7; background: #2a78d6; color: #fff; font-weight: 600; cursor: pointer; }
+  @media print { button { display: none; } body { margin: 0 auto; } }
+</style></head><body>
+<div class="bar"><div><h1>FlowGuard operator briefing ${d.future ? '<span class="tag">OUTLOOK</span>' : ""}</h1>
+<p class="sub">${esc(P.full_name)} · ${fmtDate(d.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}${d.label ? ` · ${esc(d.label)}` : ""}</p></div>
+<button onclick="window.print()">Print / save as PDF</button></div>
+${d.future ? `<p class="note"><b>Outlook: expected conditions, not observed data.</b> ${esc(d.method || "")}. Service: TransLink's published timetable for this date.</p>` : ""}
+${scen}
+<h2>Day at a glance</h2>
+<table class="kv">
+<tr><td>Service schedule</td><td>${esc(d.service_label)}</td></tr>
+<tr><td>Crowd vs a usual ${DAY_NAMES[d.day_type]}</td><td>${d.surge_ratio == null ? "–" : `${d.surge_ratio.toFixed(2)}×`}${d.is_surge ? " · surge day" : ""}</td></tr>
+<tr><td>Peak on-site pressure</td><td>${x2(d.slots[pp].pressure)} normal at ${d.slots[pp].t} (${esc(d.slots[pp].level || "")}) · ${esc(d.slots[pp].signature || "")}</td></tr>
+<tr><td>Exit wave peak${d.future ? " (expected)" : ""}</td><td>${fmtSlot(pk)} · ${Math.round((series[pk] ?? 0) / e.normal_peak * 100)} on an index where a normal day's peak = 100 (normal peak at ${fmtSlot(usualPk)})</td></tr>
+</table>
+<h2>After hours (security watch)</h2>
+<div class="night">${nightText}</div>
+<h2>Transit alerts and recommended actions</h2>
+<table><tr><th>Window</th><th>Route group</th><th>Level</th><th>Peak load</th><th>First flagged</th><th>Recommended actions</th></tr>${rows}</table>
+<h2>Exit demand peaks by route group</h2>
+<table><tr><th>Route group</th><th>Peak exit demand</th><th>At</th><th>Scheduled service then (bus-equiv. / 30 min)</th></tr>
+${groupPeaks.map((x) => `<tr><td>${esc(d.groups[x.g].label)}</td><td>${x2(x.idx)} normal</td><td>${fmtSlot(x.t)}</td><td>${x.svc == null ? "–" : x.svc.toFixed(1)}</td></tr>`).join("")}</table>
+<p class="foot">Generated ${esc(now)} by FlowGuard (${esc(state.source === "live" ? "live gold tables" : "offline snapshot")}). Times are Vancouver local time.
+Crowd figures are ratios to normal from a synthetic subscriber sample (never headcounts); direction of travel uses home area as a proxy.
+Readiness compares expected exit demand per unit of scheduled service (TransLink GTFS, Sept 2026 feed) with normal for the same service day type.</p>
+</body></html>`;
+}
+
+function openBriefing() {
+  if (!state.day) return;
+  const w = window.open("", "_blank");
+  if (!w) return showError("Allow pop-ups for this page to open the briefing.");
+  w.document.open();
+  w.document.write(briefingHtml());
+  w.document.close();
 }
 
 // ---------------------------------------------------------------- wiring
@@ -531,7 +796,10 @@ function wire() {
   document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { applyView(b.dataset.view); syncUrl(); }));
   $("#labBtn").addEventListener("click", () => openDrawer("lab", $("#lab").hidden));
   $("#askBtn").addEventListener("click", () => openDrawer("ask", $("#ask").hidden));
+  $("#briefBtn").addEventListener("click", openBriefing);
   document.addEventListener("click", (e) => {
+    const chipQ = e.target.closest("[data-ask]");
+    if (chipQ) ask(chipQ.dataset.ask);
     const sw = e.target.closest("[data-poi]");
     if (sw && sw.dataset.poi !== state.poi) loadPoi(sw.dataset.poi);
     const p = e.target.closest("[data-preset]");
@@ -539,7 +807,7 @@ function wire() {
     const c = e.target.closest("[data-close]");
     if (c) openDrawer(c.dataset.close, false);
   });
-  $("#eventSlot").innerHTML = [...Array(48 - CHART_FROM).keys()].map((i) => `<option value="${i + CHART_FROM}">${fmtSlot(i + CHART_FROM)}</option>`).join("");
+  $("#eventSlot").innerHTML = [...Array(48 - DAY_FROM).keys()].map((i) => `<option value="${i + DAY_FROM}">${fmtSlot(i + DAY_FROM)}</option>`).join("");
   for (const id of ["crowd", "service"]) {
     $(`#${id}`).addEventListener("input", (e) => { state.sc[id] = Number(e.target.value); syncLab(); renderAll(); });
   }
@@ -548,8 +816,9 @@ function wire() {
   $("#askForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const q = $("#askInput").value.trim();
-    if (q) { $("#askInput").value = ""; ask(q); }
+    if (q && !state.genieBusy) { $("#askInput").value = ""; ask(q); }
   });
+  $("#newChat").addEventListener("click", newChat);
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, select, textarea")) return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
@@ -565,6 +834,7 @@ function renderPoiSwitch() {
   const p = state.pois.find((x) => x.key === state.poi);
   $("#tagline").textContent = `${p.full_name} · TransLink operations`;
   document.title = `FlowGuard · ${p.name}`;
+  genieChips();
 }
 
 /** Switch location: load its day list and model metrics, then a day (keep the replay time). */

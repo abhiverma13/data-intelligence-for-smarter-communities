@@ -51,6 +51,10 @@ SIGNATURE_STAY_LONG = 1.15             # median dwell ≥ 1.15× baseline
 SIGNATURE_STAY_SHORT = 0.85            # median dwell ≤ 0.85× baseline
 SIGNATURE_VISITOR_X = 1.5              # out-of-region share ≥ 1.5× baseline
 TYPICAL_LOAD_SLOTS = (20, 40)          # 10:00–20:00 daytime window for typical_load
+# After-hours watch (security): overnight presence = mean occupancy 00:00–06:00 vs a normal night for that
+# weekday (seasonal window for seasonal POIs). Volume only, never visitor origin.
+NIGHT_SLOTS = 12                       # 00:00–06:00
+NIGHT_UNUSUAL_RATIO = 1.5              # ≈ the top 1–2% of nights at Park Royal / Waterfront
 
 # ---------- GTFS / transit readiness ----------
 # One representative service date per day type, inside the current feed (Sept 7 2026 → Jan 3 2027).
