@@ -507,8 +507,10 @@ async function preset(name) {
 function openDrawer(id, open = true) {
   for (const d of ["lab", "ask"]) $(`#${d}`).hidden = !(open && d === id);
   $("#labBtn").classList.toggle("active", open && id === "lab");
-  document.body.classList.toggle("lab-open", open && id === "lab");
+  $("#askBtn").classList.toggle("active", open && id === "ask");
+  document.body.classList.toggle("drawer-open", open);
   if (radar) radar.resize();
+  if (open && id === "ask") setTimeout(() => $("#askInput").focus(), 50);
 }
 
 /** ?selftest=1 — with no scenario, client readiness must equal the server's for every slot/group/horizon. */
@@ -551,22 +553,116 @@ function genieChips() {
   $("#askChips").innerHTML = qs.map((q) => `<button type="button" data-ask="${esc(q)}">${esc(q)}</button>`).join("");
 }
 
-async function ask(q) {
-  const out = $("#askOut");
-  out.insertAdjacentHTML("afterbegin", `<div class="ask-q">${esc(q)}</div><div class="caption" id="askWait">Thinking…</div>`);
-  try {
-    const r = await getJSON("/api/genie/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q, conversation_id: state.genieConv }) });
-    state.genieConv = r.conversation_id || state.genieConv;
-    let html = r.error ? `<div class="caption">${esc(r.error)}</div>` : "";
-    if (r.text) html += `<div class="ask-a">${miniMarkdown(r.text)}</div>`;
-    if (r.sql) html += `<details><summary>Show the SQL Genie ran</summary><pre>${esc(r.sql)}</pre></details>`;
-    if (r.columns && r.rows) {
-      html += `<table><tr>${r.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>${r.rows.slice(0, 20).map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</table>`;
-    }
-    $("#askWait").outerHTML = html || '<div class="caption">No answer.</div>';
-  } catch (e) {
-    $("#askWait").outerHTML = `<div class="caption">${esc(e.message)}</div>`;
+const BOT_AVATAR = '<span class="bot-avatar" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 20c4 0 5.5-8 10-8s6 8 10 8" /></svg></span>';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function chatScroll() {
+  const log = $("#askOut");
+  log.scrollTop = log.scrollHeight;
+}
+
+function addMsg(role, html) {
+  $("#chatWelcome").hidden = true;
+  const el = document.createElement("div");
+  el.className = `msg ${role}`;
+  el.innerHTML = role === "bot" ? `<div class="msg-who">${BOT_AVATAR}FlowGuard</div><div class="msg-body">${html}</div>` : html;
+  $("#askOut").appendChild(el);
+  chatScroll();
+  return el;
+}
+
+function setBusy(on) {
+  state.genieBusy = on;
+  $("#askInput").disabled = on;
+  $("#askSend").disabled = on;
+  $("#askInput").placeholder = on ? "FlowGuard is answering…" : "Ask a question…";
+}
+
+/** Reveal the answer word by word (Genie returns the whole text at once), then the table and SQL. */
+async function typeOut(body, r) {
+  const words = String(r.text || "").split(/(\s+)/);
+  const step = Math.max(1, Math.ceil(words.length / 90));       // ~90 frames whatever the length
+  for (let i = step; i < words.length + step; i += step) {
+    body.innerHTML = miniMarkdown(words.slice(0, i).join(""));
+    chatScroll();
+    await sleep(22);
   }
+  let extra = "";
+  if (r.columns && r.rows && r.rows.length) {
+    extra += `<div class="result"><table><tr>${r.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>${
+      r.rows.slice(0, 20).map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</table></div>`;
+  }
+  if (r.sql) extra += `<details><summary>Show the SQL Genie ran</summary><pre>${esc(r.sql)}</pre></details>`;
+  if (extra) body.insertAdjacentHTML("beforeend", extra);
+  chatScroll();
+}
+
+/** Stream Genie's progress (server-sent events); resolves with the final answer, or null if streaming failed. */
+async function streamGenie(q, onStatus) {
+  const resp = await fetch("/api/genie/stream", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: q, conversation_id: state.genieConv }),
+  });
+  if (!resp.ok || !resp.body) return null;
+  const reader = resp.body.getReader(), dec = new TextDecoder();
+  let buf = "", result = null;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, i).trim();
+      buf = buf.slice(i + 2);
+      if (!chunk.startsWith("data:")) continue;
+      const ev = JSON.parse(chunk.slice(5));
+      if (ev.conversation_id) state.genieConv = ev.conversation_id;
+      if (ev.type === "status") onStatus(ev.text);
+      if (ev.type === "result") result = ev;
+    }
+  }
+  return result;
+}
+
+async function ask(q) {
+  if (state.genieBusy || !q) return;
+  setBusy(true);
+  addMsg("user", esc(q));
+  const bot = addMsg("bot", '<div class="status"><span class="typing"><i></i><i></i><i></i></span><span class="st">Thinking…</span></div>');
+  const body = bot.querySelector(".msg-body");
+  const status = (text) => { const st = body.querySelector(".st"); if (st) st.textContent = text; };
+  try {
+    let r = null;
+    try { r = await streamGenie(q, status); } catch { r = null; }
+    if (!r) {                                                     // fallback: plain request
+      r = await getJSON("/api/genie/ask", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, conversation_id: state.genieConv }) });
+      state.genieConv = r.conversation_id || state.genieConv;
+    }
+    if (r.error && !r.text) {
+      bot.classList.add("error");
+      body.innerHTML = `<p>${esc(r.error)}</p>`;
+    } else if (!r.text && !(r.rows && r.rows.length)) {
+      body.innerHTML = "<p>No answer this time. Try rephrasing the question.</p>";
+    } else {
+      await typeOut(body, r);
+    }
+  } catch (e) {
+    bot.classList.add("error");
+    body.innerHTML = `<p>${esc(e.message)}</p>`;
+  } finally {
+    setBusy(false);
+    $("#askInput").focus();
+    chatScroll();
+  }
+}
+
+function newChat() {
+  if (state.genieBusy) return;
+  state.genieConv = null;
+  $("#askOut").querySelectorAll(".msg").forEach((m) => m.remove());
+  $("#chatWelcome").hidden = false;
+  $("#askInput").focus();
 }
 
 // ---------------------------------------------------------------- operator briefing
@@ -720,8 +816,9 @@ function wire() {
   $("#askForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const q = $("#askInput").value.trim();
-    if (q) { $("#askInput").value = ""; ask(q); }
+    if (q && !state.genieBusy) { $("#askInput").value = ""; ask(q); }
   });
+  $("#newChat").addEventListener("click", newChat);
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, select, textarea")) return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }

@@ -8,12 +8,14 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+import json
+
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from server import cache, logic
-from server.genie import GenieSpaceNotConfigured, ask as genie_ask, space_info as genie_space_info
+from server.genie import GenieSpaceNotConfigured, ask as genie_ask, ask_stream as genie_ask_stream, space_info as genie_space_info
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("flowguard")
@@ -112,6 +114,25 @@ def genie_ask_endpoint(body: GenieAsk):
         log.exception("genie failed")
         return {"status": "FAILED", "error": f"Genie request failed ({type(e).__name__}).", "text": None,
                 "sql": None, "columns": None, "rows": None, "conversation_id": body.conversation_id}
+
+
+@app.post("/api/genie/stream")
+def genie_stream_endpoint(body: GenieAsk):
+    """Server-sent events: Genie's progress states as they change, then the final answer."""
+    def events():
+        try:
+            for ev in genie_ask_stream(body.question, conversation_id=body.conversation_id):
+                yield f"data: {json.dumps(ev, default=str)}\n\n"
+        except GenieSpaceNotConfigured:
+            yield f"data: {json.dumps({'type': 'result', 'status': 'FAILED', 'error': 'Ask FlowGuard is not configured yet.'})}\n\n"
+        except Exception as e:  # noqa: BLE001
+            log.exception("genie stream failed")
+            err = {"type": "result", "status": "FAILED", "error": f"Genie request failed ({type(e).__name__}).",
+                   "conversation_id": body.conversation_id}
+            yield f"data: {json.dumps(err)}\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 # -------- Frontend --------

@@ -92,7 +92,10 @@ flowguard/
 - **Operator briefing** (`briefingHtml` in app.js): printable page built client-side from the current day (scenario
   included); alert windows are Strained/Critical runs at +30 min with first-flagged lead time.
 - **Genie:** space setup text and verified example SQL in `flowguard/docs/genie_instructions.md`; the app shows the
-  Ask button only when `GENIE_SPACE_ID` is set in `app/app.yaml`.
+  Ask button only when `GENIE_SPACE_ID` is set in `app/app.yaml`. The drawer is a chat (input pinned at the bottom,
+  user and FlowGuard bubbles). `POST /api/genie/stream` (server-sent events, `genie.ask_stream`) streams Genie's real
+  progress states; Genie's API does not stream answer text, so the client types the final answer out, then shows the
+  table and SQL. It falls back to `POST /api/genie/ask` if streaming fails.
 - Occupancy excludes stays over 24 h. "No service" is shown when nothing is scheduled. Route groups are never
   escalated below half the usual daytime demand.
 
