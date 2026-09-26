@@ -15,6 +15,10 @@
   --series-actual: #2a78d6;
   --series-forecast: #eb6834;
   --series-usual: #898781;
+  /* map */
+  --map-water: #dbe6f0;
+  --map-land: #f2f0e9;
+  --map-land-edge: #e3e1d7;
   /* status (fixed, never themed) */
   --good: #0ca30c;
   --warning: #fab219;
@@ -40,6 +44,9 @@
   --series-actual: #3987e5;
   --series-forecast: #d95926;
   --series-usual: #898781;
+  --map-water: #0e1621;
+  --map-land: #232321;
+  --map-land-edge: #2c2c2a;
   --tint: 0.22;
 }
 
@@ -172,6 +179,7 @@ select {
 
 /* ---------- radar ---------- */
 .legend { list-style: none; margin: 0; padding: 0; display: flex; gap: 14px; flex-wrap: wrap; font-size: 14px; color: var(--ink-2); }
+.legend[hidden] { display: none; }
 .legend li { display: flex; align-items: center; gap: 6px; }
 .sw { display: inline-block; width: 18px; height: 0; border-top: 3px solid; }
 .sw-actual { border-color: var(--series-actual); }
@@ -179,6 +187,30 @@ select {
 .sw-earlier { width: 10px; height: 10px; border: 2px solid var(--series-forecast); border-radius: 50%; }
 .sw-usual { border-color: var(--series-usual); border-top-width: 2px; }
 .chartbox { position: relative; height: 330px; }
+.mapbox { position: relative; height: 700px; background: var(--map-water); border-radius: 8px; overflow: hidden; }
+.map-msg { display: grid; place-items: center; height: 100%; color: var(--muted); }
+.mapbox.leaflet-container { font: inherit; background: var(--map-water); }
+.map-panel { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); }
+.map-bandbox { padding: 0; line-height: 0; }
+.map-kpi { padding: 8px 12px; font-size: 12px; color: var(--ink-2); }
+.map-kpi b { font-size: 21px; color: var(--ink); margin-right: 4px; }
+.map-reset { min-width: 34px; }
+.leaflet-bar a { background: var(--surface); color: var(--ink); border-color: var(--border); }
+.leaflet-bar a:hover { background: var(--surface-2); }
+.leaflet-control-attribution { font-size: 10px; }
+[data-theme="dark"] .leaflet-control-attribution { background: rgba(26, 26, 25, 0.8); color: var(--muted); }
+[data-theme="dark"] .leaflet-control-attribution a { color: var(--ink-2); }
+.leaflet-tooltip.map-label { background: none; border: 0; box-shadow: none; padding: 0; font-size: 13px; font-weight: 600;
+  color: var(--ink); text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface), 0 0 2px var(--surface); }
+.leaflet-tooltip.map-label::before { display: none; }
+.leaflet-tooltip.map-label.hub { font-size: 17px; font-weight: 800; }
+.leaflet-tooltip.map-tip { background: var(--surface); color: var(--ink); border: 1px solid var(--border); }
+.head-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.viewtoggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.viewtoggle .btn { border: 0; border-radius: 0; background: transparent; }
+.viewtoggle .btn.active { background: var(--accent); color: #fff; box-shadow: none; }
+.dot-legend { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(90deg, var(--good), var(--warning), var(--serious), var(--critical)); }
 
 /* ---------- readiness table ---------- */
 .table-wrap { overflow-x: auto; }
