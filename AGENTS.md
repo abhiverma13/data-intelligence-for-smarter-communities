@@ -23,17 +23,17 @@ directly. Every table carries a `poi` column. To add a POI, edit `pois.json` and
 
 ```
 flowguard/
-  pipeline/   Databricks notebooks 00–07, 90 (".py" files starting with "# Databricks notebook source")
+  pipeline/   Databricks notebooks 00–08, 90 (".py" files starting with "# Databricks notebook source")
               fg_settings.py  every threshold and constant (plain Python)
               fg_core.py      every formula (plain pandas/numpy)
-  config/     CSVs loaded into bronze.ref_* (origin→corridor, route-group overrides, holidays)
+  config/     CSVs loaded into bronze.ref_* (origin→corridor, route-group overrides, day-type overrides/holidays)
   app/        Databricks App: app.py + server/ (FastAPI) + static/ (vanilla JS, Chart.js + Leaflet vendored)
               static/map.js  Leaflet corridor map: real GTFS routes + per-route exit-wave bands
               static/data/<poi>/map.json  committed map geometry per POI (route polylines, waypoints, band corners, land)
   local/      run_local.py (all gold tables locally), build_snapshot.py (app offline JSON)
               build_map_geometry.py (local GTFS shapes → app/static/data/<poi>/map.json for every POI)
               local/data/ is gitignored: raw GTFS, local gold CSVs
-  deploy/     app.json (app + warehouse resource), job.json (flowguard-refresh job)
+  deploy/     app.json (app + warehouse resource), job.json (refresh job, create), job_reset.json (Verma's job, reset)
   docs/       spec, verified findings
 ```
 
@@ -64,7 +64,9 @@ flowguard/
    `pois.json` by `local/build_map_geometry.py` from GTFS `shapes.txt`. Departing trips and route groups come from
    `fg_core.poi_departures` (the same call as `06_gtfs_service`, including `route_group_overrides.csv`), so the map's
    lines match the readiness groups. Per-POI draw radius and waypoint labels live in the script's `MAP` dict.
-   Re-run the script and commit the `map.json` files if a POI, its rules or the GTFS feed change. The map is Leaflet
+   Each group's band corner (`corner`) is chosen from its outward direction; `map.js` rebuilds the layers when the
+   location changes. Re-run the script and commit the `map.json` files if a POI, its rules or the GTFS feed change.
+   `build_snapshot.py` only clears `<poi>/day/`, so it leaves `map.json` alone. The map is Leaflet
    (vendored in `static/vendor/`) over keyless Esri basemap tiles (World Street Map light, Dark Gray dark), with
    the attribution kept visible. Route overlays, labels and bands come only from `map.json`, so if the tiles
    fail to load (offline) it falls back to the committed land silhouette and still works in snapshot mode.
@@ -94,25 +96,47 @@ flowguard/
 - The human runs `git push`. Databricks pulls through a **Git folder**, where the human clicks Pull. Code is
   never edited in the Databricks UI.
 - Notebooks run on **serverless**. "Run all" is fine because this is a solo project. Order: 01 → 02 → 03 → 04 → 05,
-  and 06 (after 02) → 07. The job in `deploy/job.json` encodes this graph.
+  and 06 (after 02) → 07 (after 05 + 06) → 08. The job in `deploy/job.json` encodes this graph.
 - Databricks CLI profile: `flowguard`. The SQL warehouse ID is in `deploy/app.json`. The Git folder path is in
   `deploy/job.json`.
-- **This deployment** (Harsha) runs on workspace `dbc-4c89dd88-f18b` via CLI profile `flowguard-b` as its own app
-  `flowguard-harsha` (own service principal), but **reads Verma's shared `flowguard.gold`** (`app.yaml`; SP has
-  `USE CATALOG` + `USE SCHEMA`/`SELECT` on it). The notebooks are pinned to `workspace.flowguard_*` in `00_config.py`,
-  so `flowguard-refresh-harsha` can never overwrite the shared tables; don't run it unless you mean to rebuild that
-  private copy. Code goes up with `databricks sync ./flowguard <workspace path> -p flowguard-b` and the app with
-  `databricks apps deploy flowguard-harsha --source-code-path <app path> -p flowguard-b`.
-  The Git-folder flow above is the original workflow and still applies to the repo generally.
+- **This deployment** (Harsha) is a separate app on the same workspace as Verma's. Keep the two apart:
+
+  | | Harsha (this branch) | Verma (leave alone) |
+  |---|---|---|
+  | Branch | `deploy/harsha-workspace-b` | `main` |
+  | App | `flowguard-harsha` (own service principal) | `flowguard` |
+  | App reads | `flowguard.gold` (shared, built by Verma's pipeline) | `flowguard.gold` |
+  | Job / notebooks write | `flowguard-refresh-harsha` → `workspace.flowguard_*` (private copy) | `flowguard-refresh` → `flowguard.*` |
+  | Code path | `/Workspace/Users/aminharsh317@gmail.com/data-intelligence-for-smarter-communities` | `/Workspace/Users/a.verma1304@gmail.com/…` |
+
+  - Workspace `dbc-4c89dd88-f18b`, CLI profile `flowguard-b`; the one SQL warehouse is shared.
+  - `app.yaml` pins the app to `flowguard.gold`. `90_app_grants` gives the app's SP `USE CATALOG` on `flowguard` and
+    `USE SCHEMA` + `SELECT` on `flowguard.gold`. Harsha has `ALL_PRIVILEGES` on `flowguard`, granted by Verma.
+  - `00_config.py` on this branch is pinned to `workspace.flowguard_*`, so these notebooks can never overwrite the
+    shared tables. Don't run `flowguard-refresh-harsha` unless you mean to rebuild that private copy. Keep this pin
+    when merging `main`, which prefers the `flowguard` catalog.
+  - Pick up Verma's work with `git merge origin/main` into this branch. Keep Harsha's `app.yaml`, `00_config.py`,
+    `90_app_grants.py` and the job name/paths in `job.json`. Never push this branch's config to `main`.
+  - Deploy: `databricks sync ./flowguard <code path>/flowguard -p flowguard-b --exclude ".venv/**" --exclude
+    "local/data/**" --exclude "**/__pycache__/**"`, then `databricks apps deploy flowguard-harsha --source-code-path
+    <code path>/flowguard/app -p flowguard-b`. Large pushes to GitHub may need `git -c http.postBuffer=524288000 push`.
+  - On Harsha's Mac the shell exports `DATABRICKS_HOST`/`DATABRICKS_TOKEN` for another workspace. Those override
+    `-p`, so prefix every CLI call with `env -u DATABRICKS_HOST -u DATABRICKS_TOKEN`.
+  - Verifying live: the PAT can't open the app (401) or read `apps logs` (needs OAuth), and the local Python SQL
+    connector hits a self-signed-cert error. Run SQL through `databricks api post /api/2.0/sql/statements`, and ask
+    the human to open `/api/health` in a browser to confirm `last_source=live`.
+  - The Git-folder flow above is the original workflow and still applies to `main`.
 - Free Edition limits:
   - one small SQL warehouse
   - compute quota: if exceeded, compute stops for the day, and the app's snapshot fallback exists for this reason
   - apps auto-stop 24 h after start/deploy, so restart before judging
   - notebooks have no outbound internet: download external files locally and upload them to the Volume
-- Shell gotchas on this Windows machine:
+- Shell gotchas on Windows:
   - In Git Bash, prefix CLI calls that take workspace paths with `MSYS_NO_PATHCONV=1`.
   - In PowerShell, quote `--json "@file.json"`, because a bare `@` is PowerShell splatting.
   - Keep script output ASCII-safe or set `PYTHONIOENCODING=utf-8`. The console is cp1252.
+- On macOS: the venv python is `.venv/bin/python`, and headless Chrome is
+  `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"`.
 
 ## Verification
 
@@ -124,14 +148,16 @@ python flowguard/local/build_snapshot.py
 # regenerate the map geometry from local GTFS (flowguard/local/data/gtfs)
 python flowguard/local/build_map_geometry.py
 # run the app offline (venv lives in flowguard/app/.venv, gitignored)
-cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app --port 8765
+cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app --port 8765   # macOS: .venv/bin/python
 ```
 
 - **Client/server consistency:** open `/?date=2025-12-26&selftest=1` and read `body[data-selftest]`, which should
-  show `readiness_mismatch=0/576` (a single 23:30 cross-midnight mismatch on Saturdays is a known edge).
+  show `readiness_mismatch=0/576`, or `0/768` at Waterfront with its 4 route groups (a single 23:30 cross-midnight
+  mismatch on Saturdays is a known edge).
   Headless: `chrome --headless=new --virtual-time-budget=8000 --dump-dom "<url>"`.
 - **Map view:** the hero card toggles `Radar | Map` (default map; `?view=radar` for the chart). The map reads the
-  same `view()` maths, so the self-test also reports `map_mismatch=0`. Geometry is static, so only re-run
+  same `view()` maths, so the self-test also reports `map_mismatch=0`. Check every POI, one outlook date, and a
+  location switch in the page (layers, bands and the KPI card must all change). Geometry is static, so only re-run
   `build_map_geometry.py` when route-group rules or the GTFS feed change.
 - **Visual check:** after UI changes, take screenshots with
   `chrome --headless=new --window-size=1440,1250 --screenshot=out.png "<url>&theme=dark"`, and repeat with
@@ -154,14 +180,17 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
 - The frontend has no build step (only `map.json` is generated, by `local/build_map_geometry.py`). Colours are
   CSS tokens in `styles.css`, with light and dark each defined separately. Status colours (good / warning /
   serious / critical) are only for readiness and pressure levels, always paired with an icon and a label; the
-  map's route colour and band dots follow the same rule.
+  map's route colour and band dots follow the same rule. `.mapbox` uses `isolation: isolate` so Leaflet's
+  z-indexes (400–1000) stay under the sticky header (5) and drawers (10).
 - Commit messages end with a `Co-Authored-By` line when an agent writes the commit. Never push, deploy, or run
   Databricks jobs without the human asking.
 
 ## Status and next steps
 
-Done: pipeline 01–07, egress model with MLflow, GTFS service, readiness timeline, app (live + snapshot),
-deploy and job configs, map view (real GTFS routes + per-route exit-wave bands, Radar | Map toggle).
+Done: pipeline 01–08, egress model with MLflow, GTFS service, readiness timeline, future-date outlook, app (live +
+snapshot), deploy and job configs, Leaflet map view for every POI (real GTFS routes + per-route exit-wave bands,
+Radar | Map toggle). Harsha's `flowguard-harsha` is deployed from `deploy/harsha-workspace-b` and reads the shared
+`flowguard.gold`.
 Pipeline and app are multi-POI (Park Royal, UBC, Waterfront): the app has a location switcher, every endpoint takes
 `?poi=`, and the snapshot lives in `app/static/data/<poi>/`.
 Next:
