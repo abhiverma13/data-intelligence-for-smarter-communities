@@ -5,9 +5,14 @@ Guidance for AI coding agents working in this repo. Read this before changing an
 ## What this is
 
 **FlowGuard**: a hackathon project (Rogers × Databricks × UBC, Sept 25–27 2026) built on Databricks Free Edition.
-It uses synthetic cell-tower dwell data at Park Royal (West Vancouver) to forecast **when** the crowd will leave,
-**which direction** it heads, and whether scheduled TransLink service can carry it. The primary user is TransLink
-operations staff.
+It uses synthetic cell-tower dwell data at three points of interest (POIs): **Park Royal** (the headline story),
+**UBC** and **Waterfront Station**. For each, it forecasts **when** the crowd will leave, **which direction** it heads,
+and whether scheduled TransLink service can carry it. The primary user is TransLink operations staff.
+
+Every POI is defined once in `flowguard/app/server/pois.json`: raw file, coordinates, stop radius, corridors, route
+groups with headsign rules, operator levers, demo days, and an optional seasonal baseline (`baseline_weeks`, used by
+UBC because summer break differs from term). The pipeline reads it through `fg_settings.POIS`; the app reads it
+directly. Every table carries a `poi` column. To add a POI, edit `pois.json` and `config/origin_corridor.csv` only.
 
 - Design spec: `flowguard/docs/FLOWGUARD_SPEC.md`. Its §4.3 numbers came from a truncated sample and are **superseded**
   by `flowguard/docs/data_findings.md`. Quote the findings doc, never spec §4.3.
@@ -32,7 +37,8 @@ flowguard/
 ## Invariants: do not break these
 
 1. **One implementation of every formula.** All metric logic lives in `fg_core.py`, and all thresholds live in
-   `fg_settings.py`. Notebooks use Spark only to aggregate the ~5.4M visits to slots, then call `fg_core`.
+   `fg_settings.py` (per-POI settings in `pois.json`). Notebooks use Spark only to aggregate the ~21M visits to
+   slots, then call `fg_core` once per POI.
    `local/run_local.py` calls the same functions. Never re-implement a formula inside a notebook.
 2. **The browser mirrors `fg_core`.** `app/static/app.js` (`view`, `actionsAt`) re-implements the readiness gap
    and action logic so the Scenario Lab can recompute instantly. `app/server/logic.py` holds copies of the
@@ -43,8 +49,8 @@ flowguard/
    `00_config.py`); never rely on session time zones.
 4. **Relative numbers only in the UI.** The data is a synthetic sample, so show "× normal", shares or an index
    (normal-day peak = 100), never headcounts or "people".
-5. **Never commit raw data.** The Park Royal CSV (~390 MB) lives outside the repo and in the Databricks Volume
-   `flowguard.bronze.raw`. The `static/data/*.json` snapshot (~3.5 MB) is intentionally committed.
+5. **Never commit raw data.** The three mobility CSVs (0.4–0.6 GB each) live outside the repo and in the
+   Databricks Volume `flowguard.bronze.raw`. The `static/data/` JSON snapshot is intentionally committed.
 6. **Gold tables are the contract with the app.** If you add or rename a gold column, update `write_gold` comments
    in the notebook, `SLOT_COLS`/`TIMELINE_COLS` in `app/server/logic.py`, and rebuild the snapshot.
    In live mode, a missing column makes the app silently fall back to the snapshot. Check `/api/health`
@@ -52,9 +58,14 @@ flowguard/
 
 ## Deliberate deviations from the spec (keep unless the data changes)
 
-- Surge threshold is 1.4 (the spec's 1.6), because only 3 days reach 1.6 on the uncut data.
-- Readiness thresholds are 1.2 / 1.7 / 2.3, calibrated to the p75 / p95 / p99 of normal-day daytime gaps.
-- Typical load is computed per route group **and service day type**, so normal Saturdays aren't flagged.
+- Surge threshold is 1.4 (the spec's 1.6), because only 3 Park Royal days reach 1.6 on the uncut data.
+- Readiness thresholds are 1.2 / 1.7 / 2.3, calibrated to the p75 / p95 / p99 of Park Royal normal-day daytime gaps.
+  They give 3–9% Strained across the three POIs.
+- Typical load is computed per route group **and service day type**, so normal Saturdays aren't flagged. It uses all
+  training days (no "normal day" cap), because a ratio cap mislabels UBC term days. Seasonal POIs use a ±`baseline_weeks`
+  window for pressure, surge ratio and typical load.
+- Scheduled service is capacity in bus-equivalents (SkyTrain/SeaBus ≈ 5, West Coast Express ≈ 12); for bus-only
+  Park Royal this equals the trip count.
 - The forecast scales not-yet-arrived typical arrivals by today's trailing-2 h busyness (`TODAY_SCALING`).
   The spec formula is kept as `egress_static` in the backtest.
 - Occupancy excludes stays over 24 h. "No service" is shown when nothing is scheduled. Route groups are never
@@ -96,10 +107,11 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
   `chrome --headless=new --window-size=1440,1250 --screenshot=out.png "<url>&theme=dark"`, and repeat with
   `theme=light` and a 1280 width. The URL params are `date`, `t=HH:MM`, `theme`, and `lab=1` (opens the
   Scenario Lab).
-- **Expected numbers:**
-  - backtest R²: egress 0.97 / 0.96 / 0.95 / 0.94 vs typical week 0.64
-  - Boxing Day: first eastbound alert at 11:00 for 13:00
-  - normal Saturday 2026-04-25: nearly all Prepared
+- **Expected numbers** (`run_local.py` prints all of these):
+  - Park Royal backtest R²: egress 0.97 / 0.96 / 0.95 / 0.94 vs typical week 0.64. Boxing Day: first eastbound
+    alert at 11:00 for 13:00. Normal Saturday 2026-04-25: nearly all Prepared.
+  - UBC: egress 0.99 → 0.93, typical week −1.09 (summer holdout). Waterfront: egress 0.99 → 0.97, typical week 0.68.
+  - Daytime readiness mix: Strained ≈ 5% (Park Royal), 7% (UBC), 3% (Waterfront).
 
   If a change moves these, say so explicitly.
 
@@ -119,8 +131,10 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
 
 Done: pipeline 01–07, egress model with MLflow, GTFS service, readiness timeline, app (live + snapshot),
 deploy and job configs.
+Pipeline is multi-POI (Park Royal, UBC, Waterfront). The app still serves Park Royal only (`server/logic.py`
+constants, old table names, Park Royal snapshot) until the location switcher lands.
 Next:
-- deploy the app and run the job
+- app: location switcher, read `pois.json`, query the renamed multi-POI tables, per-POI snapshot
 - Genie space ("Ask FlowGuard" drawer is wired; set `GENIE_SPACE_ID` in `app/app.yaml` and in `90_app_grants`)
 - pitch script (`docs/pitch_script.md`) built from `data_findings.md`
 - stretch: after-hours watch (security theme)

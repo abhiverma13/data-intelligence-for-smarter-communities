@@ -2,7 +2,7 @@
 # MAGIC %md
 # MAGIC # FlowGuard · 02 — Bronze
 # MAGIC Lands the uploaded files as-is (every column a string) plus lineage columns:
-# MAGIC - Park Royal CSV → `bronze.pr_raw`
+# MAGIC - mobility CSVs (Park Royal, UBC, Waterfront) → `bronze.mobility_raw`, tagged with `poi`
 # MAGIC - TransLink GTFS `*.txt` → `bronze.gtfs_<file>`
 # MAGIC
 # MAGIC Prerequisite: `01_setup_uc` has run and the files are uploaded to the `raw` Volume.
@@ -12,6 +12,8 @@
 # MAGIC %run ./00_config
 
 # COMMAND ----------
+
+from functools import reduce
 
 from pyspark.sql import functions as F
 
@@ -29,24 +31,26 @@ def clean_columns(df):
 
 # COMMAND ----------
 
-# DBTITLE 1,Park Royal CSV → bronze.pr_raw
-assert PR_FILE in volume_files(RAW_PATH), (
-    f"{PR_FILE} not found in {RAW_PATH}. Upload it via Catalog → {CATALOG} → {BRONZE_SCHEMA} → Volumes → raw."
-)
-
-pr_raw = (
-    spark.read.option("header", True).option("inferSchema", False)
-    .csv(f"{RAW_PATH}/{PR_FILE}")
-    .transform(clean_columns)
-    .withColumn("_source_file", F.col("_metadata.file_path"))
-    .withColumn("_ingested_at", F.current_timestamp())
-)
-pr_raw.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{BRONZE}.pr_raw")
-spark.sql(f"COMMENT ON TABLE {BRONZE}.pr_raw IS 'Park Royal synthetic cell-tower attachments, raw strings as uploaded. One row per device attachment.'")
-
-n = spark.table(f"{BRONZE}.pr_raw").count()
-print(f"✅ {BRONZE}.pr_raw: {n:,} rows")
-display(spark.table(f"{BRONZE}.pr_raw").groupBy("location_name").count())
+# DBTITLE 1,Mobility CSVs → bronze.mobility_raw (one poi per file)
+present = volume_files(RAW_PATH)
+frames = []
+for p in POIS:
+    if p["file"] not in present:
+        print(f"⚠️ {p['file']} ({p['name']}) not found in {RAW_PATH} — skipped. Upload it and re-run.")
+        continue
+    frames.append(
+        spark.read.option("header", True).option("inferSchema", False)
+        .csv(f"{RAW_PATH}/{p['file']}")
+        .transform(clean_columns)
+        .withColumn("poi", F.lit(p["key"]))
+        .withColumn("_source_file", F.col("_metadata.file_path"))
+        .withColumn("_ingested_at", F.current_timestamp())
+    )
+assert frames, f"No mobility CSVs found in {RAW_PATH}."
+raw = reduce(lambda a, b: a.unionByName(b), frames)
+raw.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{BRONZE}.mobility_raw")
+spark.sql(f"COMMENT ON TABLE {BRONZE}.mobility_raw IS 'Synthetic cell-tower attachments for each point of interest, raw strings as uploaded. One row per device attachment.'")
+display(spark.table(f"{BRONZE}.mobility_raw").groupBy("poi", "location_name").count().orderBy("poi"))
 
 # COMMAND ----------
 

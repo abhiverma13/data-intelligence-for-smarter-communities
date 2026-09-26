@@ -50,8 +50,10 @@ GOLD = f"{CATALOG}.{GOLD_SCHEMA}"
 RAW_VOLUME = f"{BRONZE}.raw"
 RAW_PATH = f"/Volumes/{CATALOG}/{BRONZE_SCHEMA}/raw"
 GTFS_PATH = f"{RAW_PATH}/gtfs"
-PR_FILE = "synthetic_park_royal_mall.csv"
 GTFS_FILES = ["stops", "routes", "trips", "stop_times", "calendar", "calendar_dates"]
+# Points of interest (Park Royal, UBC, Waterfront) come from app/server/pois.json via fg_settings.POIS;
+# each has a raw CSV file name (poi["file"]) expected at the root of the raw Volume.
+POI_KEYS = [p["key"] for p in POIS]
 
 # ---------- Repo config CSVs (flowguard/config/) ----------
 def _find_config_dir() -> str:
