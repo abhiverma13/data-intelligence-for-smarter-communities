@@ -56,14 +56,21 @@ write_gold(outlook["outlook_days"], "outlook_days",
            f"One row per point of interest and future day (Sept 7 2026 to Jan 3 2027). {OUTLOOK_NOTE}",
            {"surge_ratio": "Expected daily arrivals vs normal for that weekday (median of the analog days)",
             "method": "How the day was estimated (holiday match, same week last year, or typical weekday)",
+            "night_ratio": "Expected overnight presence 00:00-06:00 vs a normal night (median of the analog days)",
+            "night_unusual": "True if unusual overnight presence is expected (night_ratio >= 1.5)",
             "analog_dates": "Past days used as analogs"},
            ts_cols=["peak_pressure_slot"], date_cols=["date"])
 write_gold(outlook["outlook_slots"], "outlook_slots",
-           f"Expected conditions per point of interest and 30-minute slot for future days. {OUTLOOK_NOTE}", {},
+           f"Expected conditions per point of interest and 30-minute slot for future days. {OUTLOOK_NOTE}",
+           {"pressure": "Expected people on site vs normal for this weekday and slot (x normal)",
+            "signature": "Expected mobility signature"},
            ts_cols=["slot_ts"], date_cols=["date"])
 write_gold(outlook["outlook_slot_corridor"], "outlook_slot_corridor",
            f"Expected exits and catchment shares per corridor and 30-minute slot for future days. {OUTLOOK_NOTE}", {},
            ts_cols=["slot_ts"])
 write_gold(outlook["outlook_timeline"], "outlook_timeline",
-           f"Expected transit readiness and actions per slot and route group for future days. {OUTLOOK_NOTE}", {},
+           f"Expected transit readiness and actions per slot and route group for future days. {OUTLOOK_NOTE}",
+           {**{f"readiness_h{h}": f"Expected Prepared, Watch, Strained, Critical or No service at +{h * SLOT_MINUTES} min" for h in HORIZONS},
+            **{f"gap_h{h}": f"Expected exit demand per unit of scheduled service vs normal at +{h * SLOT_MINUTES} min" for h in HORIZONS},
+            "action_text": "Recommended operator action if any horizon is expected Strained or Critical"},
            ts_cols=["slot_ts"], date_cols=["date"])

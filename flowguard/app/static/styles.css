@@ -259,6 +259,14 @@ table.ready { width: 100%; border-collapse: separate; border-spacing: 0 6px; fon
 .slider input { width: 100%; accent-color: var(--accent); }
 .event select { min-width: 0; width: 100%; }
 .event-row { display: grid; grid-template-columns: 110px 1fr; gap: 8px; margin-top: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.chips button {
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--ink-2); border-radius: 999px;
+  padding: 5px 11px; font-size: 13px; cursor: pointer; text-align: left;
+}
+.chips button:hover { border-color: var(--accent); color: var(--ink); }
+.ask-out details { font-size: 13px; color: var(--ink-2); }
+.ask-out pre { white-space: pre-wrap; background: var(--surface-2); padding: 8px; border-radius: 6px; font-size: 12px; }
 .ask-form { display: flex; gap: 8px; margin: 14px 0; }
 .ask-form input { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 .ask-out { display: grid; gap: 10px; font-size: 15px; }

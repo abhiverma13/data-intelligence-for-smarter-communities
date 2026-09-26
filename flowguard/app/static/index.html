@@ -45,6 +45,7 @@
       </div>
 
       <button id="labBtn" class="btn">Scenario Lab</button>
+      <button id="briefBtn" class="btn" title="Printable operator briefing for this day">Briefing</button>
       <button id="askBtn" class="btn" hidden>Ask FlowGuard</button>
       <button id="themeBtn" class="btn icon" title="Light / dark" aria-label="Toggle light or dark theme">
         <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9A9 9 0 0 0 12 3zm0 16V5a7 7 0 0 1 0 14z"/></svg>
@@ -155,7 +156,8 @@
       <h2>Ask FlowGuard</h2>
       <button class="btn icon" data-close="ask" aria-label="Close">✕</button>
     </div>
-    <p class="caption">Natural-language questions over the gold tables (Databricks Genie).</p>
+    <p class="caption">Ask in plain English. Answers come from the FlowGuard gold tables via Databricks Genie, as ratios to normal.</p>
+    <div id="askChips" class="chips"></div>
     <form id="askForm" class="ask-form">
       <input id="askInput" type="text" placeholder="Which days had the highest surge ratio?" autocomplete="off">
       <button class="btn primary" type="submit">Ask</button>

@@ -72,6 +72,13 @@ flowguard/
   feed covers. Crowd = median of analog past days (same holiday last year → same week last year ±1 → typical weekday);
   service = the published schedule of that exact date (`service_for_date`). The UI marks them with a violet
   OUTLOOK badge, a dashed explainer bar and dashed card borders; never present them as observed data.
+- **After-hours watch (security):** `days.night_ratio` = mean occupancy 00:00–06:00 vs a normal night for that
+  weekday (seasonal for UBC); `night_unusual` at ≥ 1.5×. Volume only — never use visitor origin as a security signal.
+  The radar spans 00:00–24:00 with the after-hours band (grey, amber when unusual).
+- **Operator briefing** (`briefingHtml` in app.js): printable page built client-side from the current day (scenario
+  included); alert windows are Strained/Critical runs at +30 min with first-flagged lead time.
+- **Genie:** space setup text and verified example SQL in `flowguard/docs/genie_instructions.md`; the app shows the
+  Ask button only when `GENIE_SPACE_ID` is set in `app/app.yaml`.
 - Occupancy excludes stays over 24 h. "No service" is shown when nothing is scheduled. Route groups are never
   escalated below half the usual daytime demand.
 

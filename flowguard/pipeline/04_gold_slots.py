@@ -102,7 +102,10 @@ write_gold(
      "is_surge": f"True if surge_ratio >= {SURGE_RATIO_THRESHOLD}",
      "peak_pressure": "Highest pressure between 08:00 and 22:00",
      "peak_pressure_slot": "Slot of peak_pressure",
-     "label": "Holiday name, or Surge day"},
+     "label": "Holiday name, or Surge day",
+     "night_presence": "After-hours watch: mean devices present 00:00-06:00 (sample scale, stays over 24 h excluded)",
+     "night_ratio": "After-hours watch: overnight presence vs a normal night for that weekday (x normal)",
+     "night_unusual": f"True if night_ratio >= {NIGHT_UNUSUAL_RATIO} (unusual overnight presence; volume only, never visitor origin)"},
     ts_cols=["peak_pressure_slot"], date_cols=["date"],
 )
 

@@ -16,6 +16,7 @@ HORIZONS = [1, 2, 3, 4]
 PRESSURE_LEVELS = [[1.3, "Normal"], [1.8, "Elevated"], [2.5, "High"], [None, "Severe"]]
 READINESS_LEVELS = [[1.2, "Prepared"], [1.7, "Watch"], [2.3, "Strained"], [None, "Critical"]]
 MIN_DEMAND_SHARE = 0.5
+NIGHT_UNUSUAL_RATIO = 1.5            # mirrors fg_settings.NIGHT_UNUSUAL_RATIO
 OUTLOOK_START = "2026-09-07"          # future days (outlook) start here; mirrors fg_settings.OUTLOOK_START
 SERVICE_LABELS = {"WEEKDAY": "weekday", "SATURDAY": "Saturday", "SUNDAY_HOLIDAY": "Sunday/holiday"}
 
@@ -170,6 +171,7 @@ def day_payload(poi: Dict[str, Any], day: Dict[str, Any], slots: List[Dict[str, 
     d = str(day["date"])[:10]
     return {
         "poi": {"key": poi["key"], "name": poi["name"], "full_name": poi["full_name"], "hub": poi["hub"],
+                "security_contact": poi.get("security_contact", "site security"),
                 "catchment_kpi": poi["catchment_kpi"], "replay_start": poi.get("replay_start", "10:00")},
         "date": d,
         "label": (dict(poi["presets"]) | dict(poi.get("outlook_presets", []))).get(d) or day.get("label") or "",
@@ -181,6 +183,8 @@ def day_payload(poi: Dict[str, Any], day: Dict[str, Any], slots: List[Dict[str, 
         "service_label": SERVICE_LABELS.get(day["service_day_type"], day["service_day_type"]),
         "surge_ratio": clean(float(day["surge_ratio"])),
         "is_surge": bool(day["is_surge"]),
+        "night": {"ratio": clean(float(day["night_ratio"])) if day.get("night_ratio") is not None else None,
+                  "unusual": bool(day.get("night_unusual")), "threshold": NIGHT_UNUSUAL_RATIO},
         "thresholds": {"pressure": PRESSURE_LEVELS, "readiness": READINESS_LEVELS,
                        "min_demand_share": MIN_DEMAND_SHARE, "slot_minutes": SLOT_MINUTES},
         "corridors": [{"key": c["key"], "label": c["label"]} for c in poi["corridors"]],
