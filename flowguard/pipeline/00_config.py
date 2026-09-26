@@ -25,23 +25,9 @@ importlib.reload(fg_core)
 from fg_settings import *        # noqa: F401,F403  (TS_IS_UTC, POI_*, thresholds, …)
 
 # ---------- Unity Catalog ----------
-PREFERRED_CATALOG = "flowguard"
-FALLBACK_CATALOG = "workspace"          # Free Edition default catalog
-FALLBACK_SCHEMA_PREFIX = "flowguard_"
-
-
-def _catalog_usable(name: str) -> bool:
-    try:
-        spark.sql(f"USE CATALOG `{name}`")
-        return True
-    except Exception:
-        return False
-
-
-if _catalog_usable(PREFERRED_CATALOG):
-    CATALOG, SCHEMA_PREFIX = PREFERRED_CATALOG, ""
-else:
-    CATALOG, SCHEMA_PREFIX = FALLBACK_CATALOG, FALLBACK_SCHEMA_PREFIX
+# Harsha's deployment (workspace B): the app reads the shared flowguard.gold built by Verma's pipeline, so these
+# notebooks are pinned to workspace.flowguard_* and can never overwrite the shared tables, even with access to them.
+CATALOG, SCHEMA_PREFIX = "workspace", "flowguard_"
 
 BRONZE_SCHEMA = f"{SCHEMA_PREFIX}bronze"
 SILVER_SCHEMA = f"{SCHEMA_PREFIX}silver"

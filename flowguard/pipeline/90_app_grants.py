@@ -20,6 +20,7 @@
 from databricks.sdk import WorkspaceClient
 
 APP_NAME = "flowguard-harsha"
+APP_CATALOG, APP_GOLD = "flowguard", "flowguard.gold"   # the app reads the shared gold tables (see app.yaml), not CATALOG
 GENIE_SPACE_ID = ""   # stretch: paste the Genie space id here, then re-run
 
 w = WorkspaceClient()
@@ -28,9 +29,9 @@ sp = app.service_principal_client_id
 print(f"App {APP_NAME} runs as service principal {app.service_principal_name} ({sp})")
 
 for stmt in [
-    f"GRANT USE CATALOG ON CATALOG `{CATALOG}` TO `{sp}`",
-    f"GRANT USE SCHEMA ON SCHEMA {GOLD} TO `{sp}`",
-    f"GRANT SELECT ON SCHEMA {GOLD} TO `{sp}`",
+    f"GRANT USE CATALOG ON CATALOG `{APP_CATALOG}` TO `{sp}`",
+    f"GRANT USE SCHEMA ON SCHEMA {APP_GOLD} TO `{sp}`",
+    f"GRANT SELECT ON SCHEMA {APP_GOLD} TO `{sp}`",
 ]:
     spark.sql(stmt)
     print("✅", stmt)
