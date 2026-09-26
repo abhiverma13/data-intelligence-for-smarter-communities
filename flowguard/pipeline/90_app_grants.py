@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # FlowGuard · 90 — Grant the app read access
 # MAGIC The Databricks App runs as its own **service principal**. It needs `USE CATALOG`, `USE SCHEMA` and `SELECT`

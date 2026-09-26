@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # FlowGuard · 04 — Gold: slots, pressure, signature, days
 # MAGIC `silver.visits` → three gold tables for every point of interest (spec §5.2, metrics 1–3 and 8):

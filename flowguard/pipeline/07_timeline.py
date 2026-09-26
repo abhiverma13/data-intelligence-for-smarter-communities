@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # FlowGuard · 07 — Transit Pressure Gap, readiness and action cards
 # MAGIC For every point of interest, slot and route group, for +30…+120 min (spec §5.2, metrics 7 and 9):

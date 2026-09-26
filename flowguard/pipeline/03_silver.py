@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # FlowGuard · 03 — Silver
 # MAGIC `bronze.mobility_raw` → `silver.visits`: one clean, typed row per device visit, for every point of interest.

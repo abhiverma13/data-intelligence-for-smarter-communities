@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # FlowGuard · 06 — Scheduled transit service at each point of interest (TransLink GTFS)
 # MAGIC For every POI in `pois.json`:

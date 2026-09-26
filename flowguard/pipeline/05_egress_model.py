@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # FlowGuard · 05 — Egress model (the ML component)
 # MAGIC Forecasts **departures** 30–120 min ahead from arrivals already inside plus a learned dwell kernel

@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # FlowGuard · 02 — Bronze
 # MAGIC Lands the uploaded files as-is (every column a string) plus lineage columns:

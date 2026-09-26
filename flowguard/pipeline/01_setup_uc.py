@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # FlowGuard · 01 — Unity Catalog setup
 # MAGIC Creates the catalog, the `bronze / silver / gold` schemas and the `raw` Volume, then loads the
