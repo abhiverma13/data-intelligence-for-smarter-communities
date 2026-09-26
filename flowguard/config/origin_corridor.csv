@@ -1,0 +1,37 @@
+origin,corridor
+West Vancouver,NS_WEST
+North Vancouver,NS_EAST
+Burnaby,EAST
+New Westminster,EAST
+Surrey,EAST
+Port Moody,EAST
+Langley,EAST
+Maple Ridge,EAST
+Pitt Meadows,EAST
+Hastings-Sunrise,EAST
+Renfrew-Collingwood,EAST
+Grandview-Woodland,EAST
+Downtown,SOUTH
+West End,SOUTH
+Kitsilano,SOUTH
+Fairview,SOUTH
+Mount Pleasant,SOUTH
+Strathcona,SOUTH
+UBC,SOUTH
+Arbutus Ridge,SOUTH
+Dunbar-Southlands,SOUTH
+Marpole,SOUTH
+Oakridge,SOUTH
+Sunset,SOUTH
+Kensington-Cedar Cottage,SOUTH
+Victoria-Fraserview,SOUTH
+Killarney,SOUTH
+Richmond,SOUTH
+Delta,SOUTH
+British Columbia Other,BC_OTHER
+Ontario,OUT_OF_REGION
+Alberta,OUT_OF_REGION
+Manitoba,OUT_OF_REGION
+Saskatchewan and Territories,OUT_OF_REGION
+Atlantic Canada,OUT_OF_REGION
+International,OUT_OF_REGION
