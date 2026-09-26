@@ -102,7 +102,6 @@
               <li class="hist-only"><span class="sw sw-actual"></span>Actual</li>
               <li><span class="sw sw-forecast"></span>Forecast</li>
               <li><span class="sw sw-usual"></span>Normal</li>
-              <li><span class="dot-legend"></span>Dot = readiness</li>
             </ul>
             <div class="viewtoggle" role="group" aria-label="Radar chart or map">
               <button class="btn small" data-view="radar">Radar</button>
@@ -111,7 +110,11 @@
           </div>
         </div>
         <div class="chartbox" id="chartbox"><canvas id="radar" aria-label="Exit wave chart"></canvas></div>
-        <div class="mapbox" id="mapbox" hidden></div>
+        <div id="mapWrap" hidden>
+          <div class="mapbox" id="mapbox"></div>
+          <div class="map-key" id="mapKey"></div>
+          <div class="map-bands" id="mapBands" aria-label="Exit wave per route group, next two hours"></div>
+        </div>
       </article>
 
       <article class="card" id="readyCard">

@@ -28,8 +28,8 @@ flowguard/
               fg_core.py      every formula (plain pandas/numpy)
   config/     CSVs loaded into bronze.ref_* (origin→corridor, route-group overrides, day-type overrides/holidays)
   app/        Databricks App: app.py + server/ (FastAPI) + static/ (vanilla JS, Chart.js + Leaflet vendored)
-              static/map.js  Leaflet corridor map: real GTFS routes + per-route exit-wave bands
-              static/data/<poi>/map.json  committed map geometry per POI (route polylines, waypoints, band corners, land)
+              static/map.js  Leaflet corridor map: real GTFS routes, end labels, flow dots + per-route exit-wave cards
+              static/data/<poi>/map.json  committed map geometry per POI (route polylines, corridor ends, waypoints, land)
   local/      run_local.py (all gold tables locally), build_snapshot.py (app offline JSON)
               build_map_geometry.py (local GTFS shapes → app/static/data/<poi>/map.json for every POI)
               local/data/ is gitignored: raw GTFS, local gold CSVs
@@ -64,11 +64,14 @@ flowguard/
    `pois.json` by `local/build_map_geometry.py` from GTFS `shapes.txt`. Departing trips and route groups come from
    `fg_core.poi_departures` (the same call as `06_gtfs_service`, including `route_group_overrides.csv`), so the map's
    lines match the readiness groups. Per-POI draw radius and waypoint labels live in the script's `MAP` dict.
-   Each group's band corner (`corner`) is chosen from its outward direction; `map.js` rebuilds the layers when the
-   location changes. Re-run the script and commit the `map.json` files if a POI, its rules or the GTFS feed change.
+   Each group's `end` point carries a permanent label (name + readiness chip + next-30-min index) facing away from the
+   hub; `fit()` projects those labels at the target zoom and pads only the sides they would spill past. Groups also
+   have a `corner` field that `map.js` no longer uses (the exit-wave cards now sit in a strip under the map).
+   `map.js` rebuilds the layers when the location changes. Re-run the script and commit the `map.json` files if a POI,
+   its rules or the GTFS feed change.
    `build_snapshot.py` only clears `<poi>/day/`, so it leaves `map.json` alone. The map is Leaflet
-   (vendored in `static/vendor/`) over keyless Esri basemap tiles (World Street Map light, Dark Gray dark), with
-   the attribution kept visible. Route overlays, labels and bands come only from `map.json`, so if the tiles
+   (vendored in `static/vendor/`) over keyless Esri canvas basemap tiles (Light Gray light, Dark Gray dark; quiet so the routes lead), with
+   the attribution kept visible. Route overlays, labels and cards come only from `map.json`, so if the tiles
    fail to load (offline) it falls back to the committed land silhouette and still works in snapshot mode.
    No API keys in the frontend. (CARTO basemaps now watermark tiles without a key, so don't switch to them.)
 
@@ -157,7 +160,7 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
   Headless: `chrome --headless=new --virtual-time-budget=8000 --dump-dom "<url>"`.
 - **Map view:** the hero card toggles `Radar | Map` (default map; `?view=radar` for the chart). The map reads the
   same `view()` maths, so the self-test also reports `map_mismatch=0`. Check every POI, one outlook date, and a
-  location switch in the page (layers, bands and the KPI card must all change). Geometry is static, so only re-run
+  location switch in the page (layers, end labels, cards and the KPI card must all change). Geometry is static, so only re-run
   `build_map_geometry.py` when route-group rules or the GTFS feed change.
 - **Visual check:** after UI changes, take screenshots with
   `chrome --headless=new --window-size=1440,1250 --screenshot=out.png "<url>&theme=dark"`, and repeat with
@@ -180,7 +183,11 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
 - The frontend has no build step (only `map.json` is generated, by `local/build_map_geometry.py`). Colours are
   CSS tokens in `styles.css`, with light and dark each defined separately. Status colours (good / warning /
   serious / critical) are only for readiness and pressure levels, always paired with an icon and a label; the
-  map's route colour and band dots follow the same rule. `.mapbox` uses `isolation: isolate` so Leaflet's
+  map's route colour, end-label chips and card dots follow the same rule. Map encoding: colour = worst readiness in
+  the next 2 h, width = next-30-min exit demand, moving dots = direction of travel (speed ∝ demand), hub ring =
+  on-site pressure; animations stop under `prefers-reduced-motion`. Tile fade is off (`fadeAnimation: false`) because
+  the flow animation can starve Leaflet's rAF fade in headless captures; `--disable-gpu` captures can also show a faint
+  rectangular seam that a GPU render doesn't, so drop that flag when judging the map. `.mapbox` uses `isolation: isolate` so Leaflet's
   z-indexes (400–1000) stay under the sticky header (5) and drawers (10).
 - Commit messages end with a `Co-Authored-By` line when an agent writes the commit. Never push, deploy, or run
   Databricks jobs without the human asking.
@@ -188,7 +195,7 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
 ## Status and next steps
 
 Done: pipeline 01–08, egress model with MLflow, GTFS service, readiness timeline, future-date outlook, app (live +
-snapshot), deploy and job configs, Leaflet map view for every POI (real GTFS routes + per-route exit-wave bands,
+snapshot), deploy and job configs, Leaflet map view for every POI (real GTFS routes, labelled corridor ends, flow dots + per-route exit-wave cards,
 Radar | Map toggle). Harsha's `flowguard-harsha` is deployed from `deploy/harsha-workspace-b` and reads the shared
 `flowguard.gold`.
 Pipeline and app are multi-POI (Park Royal, UBC, Waterfront): the app has a location switcher, every endpoint takes

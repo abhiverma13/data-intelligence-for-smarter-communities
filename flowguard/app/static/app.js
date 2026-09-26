@@ -336,12 +336,12 @@ function applyView(v) {
   state.view = v === "radar" ? "radar" : "map";
   const isMap = state.view === "map";
   $("#chartbox").hidden = isMap;
-  $("#mapbox").hidden = !isMap;
+  $("#mapWrap").hidden = !isMap;
   $("#radarLegend").hidden = isMap;
   $("#mapLegend").hidden = !isMap;
   document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === state.view));
   $("#heroSub").textContent = isMap
-    ? "corridors on real TransLink routes · exit index × normal · dot colour = readiness"
+    ? "where the crowd goes next · real TransLink routes · click a route to zoom"
     : "exit wave · index: normal-day peak = 100";
   if (!isMap && radar) radar.resize();
   renderHero();
