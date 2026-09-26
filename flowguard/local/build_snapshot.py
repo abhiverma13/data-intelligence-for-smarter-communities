@@ -82,7 +82,7 @@ def main():
         normal = days[days["surge_ratio"].between(0.95, 1.05) & (days["label"] == "")]
         for dt in ["Wed", "Fri", "Sat", "Sun"]:
             wanted |= set(normal[normal["day_type"] == dt]["date"].iloc[5:6])
-        shutil.rmtree(OUT / k, ignore_errors=True)
+        shutil.rmtree(OUT / k / "day", ignore_errors=True)    # keep <poi>/map.json (build_map_geometry.py)
         slots, tl = slots_all[slots_all["poi"] == k], tl_all[tl_all["poi"] == k]
         fc, sc = fc_all[fc_all["poi"] == k], sc_all[sc_all["poi"] == k]
         for d in sorted(wanted):

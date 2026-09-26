@@ -15,6 +15,10 @@
   --series-actual: #2a78d6;
   --series-forecast: #eb6834;
   --series-usual: #898781;
+  /* map */
+  --map-water: #dbe6f0;
+  --map-land: #f2f0e9;
+  --map-land-edge: #e3e1d7;
   --outlook: #4a3aa7;
   --outlook-ink: #4a3aa7;
   /* status (fixed, never themed) */
@@ -42,6 +46,9 @@
   --series-actual: #3987e5;
   --series-forecast: #d95926;
   --series-usual: #898781;
+  --map-water: #0e1621;
+  --map-land: #232321;
+  --map-land-edge: #2c2c2a;
   --outlook: #9085e9;
   --outlook-ink: #b3abf2;
   --tint: 0.22;
@@ -214,6 +221,7 @@ body.outlook .legend .hist-only, body:not(.outlook) .legend .outlook-only { disp
 
 /* ---------- radar ---------- */
 .legend { list-style: none; margin: 0; padding: 0; display: flex; gap: 14px; flex-wrap: wrap; font-size: 14px; color: var(--ink-2); }
+.legend[hidden] { display: none; }
 .legend li { display: flex; align-items: center; gap: 6px; }
 .sw { display: inline-block; width: 18px; height: 0; border-top: 3px solid; }
 .sw-actual { border-color: var(--series-actual); }
@@ -221,6 +229,84 @@ body.outlook .legend .hist-only, body:not(.outlook) .legend .outlook-only { disp
 .sw-earlier { width: 10px; height: 10px; border: 2px solid var(--series-forecast); border-radius: 50%; }
 .sw-usual { border-color: var(--series-usual); border-top-width: 2px; }
 .chartbox { position: relative; height: 330px; }
+.mapbox { position: relative; height: clamp(460px, 64vh, 640px); background: var(--map-water); border-radius: 8px; overflow: hidden;
+  isolation: isolate; z-index: 0; }   /* keep Leaflet's z-indexes (400–1000) under the sticky header and drawers */
+.map-msg { display: grid; place-items: center; height: 100%; color: var(--muted); }
+.mapbox.leaflet-container { font: inherit; background: var(--map-water); }
+.map-panel { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22); }
+.map-kpi { padding: 8px 12px; font-size: 12px; color: var(--ink-2); line-height: 1.3; }
+.map-kpi .caption { font-size: 12px; margin: 0; }
+.map-kpi .kpi-row { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+.map-kpi b { font-size: 24px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.map-kpi .chip { font-size: 12px; }
+.map-kpi .chip .dot { width: 15px; height: 15px; }
+.map-reset { min-width: 34px; }
+.map-key { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+.map-key:empty { display: none; }
+.map-key .lg-title { font-weight: 700; color: var(--ink); }
+.map-key ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 12px; }
+.map-key li { display: flex; align-items: center; gap: 5px; color: var(--ink); }
+.lg-dot { width: 15px; height: 15px; border-radius: 50%; background: var(--st); display: grid; place-items: center; flex: none; }
+.lg-dot svg { width: 10px; height: 10px; fill: #fff; }
+.lg-key { display: inline-flex; align-items: center; gap: 7px; }
+.lg-width { width: 22px; height: 10px; flex: none; background: var(--ink-2);
+  clip-path: polygon(0 35%, 100% 0, 100% 100%, 0 65%); }
+.lg-flow { width: 22px; height: 6px; flex: none; border-radius: 3px; background:
+  radial-gradient(circle, var(--surface) 1.6px, transparent 2px) 0 50% / 8px 6px repeat-x, var(--ink-2); }
+.lg-ring { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2.5px solid var(--ink-2);
+  box-shadow: inset 0 0 0 2.5px var(--surface), inset 0 0 0 8px var(--accent); }
+.leaflet-bar a { background: var(--surface); color: var(--ink); border-color: var(--border); }
+.leaflet-bar a:hover { background: var(--surface-2); }
+.leaflet-control-attribution { font-size: 10px; }
+[data-theme="dark"] .leaflet-control-attribution { background: rgba(26, 26, 25, 0.8); color: var(--muted); }
+[data-theme="dark"] .leaflet-control-attribution a { color: var(--ink-2); }
+.leaflet-tooltip.map-label { background: none; border: 0; box-shadow: none; padding: 0; font-size: 13px; font-weight: 600;
+  color: var(--ink-2); text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface), 0 0 2px var(--surface); }
+.leaflet-tooltip.map-label::before, .leaflet-tooltip.map-endlabel::before { display: none; }
+.leaflet-tooltip.map-label.hub { font-size: 19px; font-weight: 800; color: var(--ink); }
+.leaflet-tooltip.map-tip { background: var(--surface); color: var(--ink); border: 1px solid var(--border); }
+.map-tip .tip-hint { color: var(--muted); font-size: 12px; }
+/* corridor end labels: name + readiness chip + next-30-min exit index */
+.leaflet-tooltip.map-endlabel { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 10px; border-radius: 999px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  font-size: 13px; cursor: pointer; transition: opacity 0.15s; }
+.map-endlabel .el-name { font-weight: 800; }
+.map-endlabel .el-idx { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.map-endlabel .chip { font-size: 12px; padding: 1px 8px 1px 4px; }
+.map-endlabel .chip .dot { width: 15px; height: 15px; }
+.map-endlabel .chip .dot svg { width: 10px; height: 10px; }
+.map-endlabel.faded { opacity: 0.3; }
+/* exit-wave flow: dots travel outward from the hub; the per-route duration is set in map.js */
+.map-flow { animation: fg-flow 1.6s linear infinite; }
+@keyframes fg-flow { to { stroke-dashoffset: -16.1; } }
+.map-hub-ring { transform-box: fill-box; transform-origin: center; }
+.map-hub-ring.pulse { animation: fg-pulse 1.8s ease-out infinite; }
+@keyframes fg-pulse { 0% { transform: scale(0.7); opacity: 1; } 100% { transform: scale(1.5); opacity: 0.15; } }
+@media (prefers-reduced-motion: reduce) {
+  .map-flow, .map-hub-ring.pulse { animation: none; }
+}
+/* per-route exit-wave cards under the map */
+.map-bands { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 10px; }
+.map-bands:empty { display: none; }
+.band { text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--st, var(--none));
+  border-radius: 8px; padding: 10px 12px 6px; cursor: pointer; color: var(--ink); transition: border-color 0.15s, box-shadow 0.15s; }
+.band[hidden] { display: none; }
+.band:hover, .band.hover { border-color: var(--accent); border-left-color: var(--st, var(--none)); }
+.band.selected { box-shadow: inset 0 0 0 1px var(--accent); border-color: var(--accent); border-left-color: var(--st, var(--none)); }
+.band:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.band-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.band-head b { font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.band-head .chip { flex: none; }
+.band-head .chip { font-size: 13px; }
+.band-sub { font-size: 13px; color: var(--muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.band-now { font-size: 13px; color: var(--ink-2); margin: 1px 0 2px; }
+.band-now b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.band-chart { display: block; width: 100%; height: auto; }
+.head-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.viewtoggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.viewtoggle .btn { border: 0; border-radius: 0; background: transparent; }
+.viewtoggle .btn.active { background: var(--accent); color: #fff; box-shadow: none; }
 
 /* ---------- readiness table ---------- */
 .table-wrap { overflow-x: auto; }

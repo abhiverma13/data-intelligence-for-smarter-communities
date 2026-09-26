@@ -27,7 +27,7 @@ const STATUS = {
 };
 
 const state = {
-  pois: [], poi: null, days: null, model: null, day: null, date: null, slot: 26, playing: false, speed: 1, timer: null, source: "",
+  pois: [], poi: null, days: null, model: null, day: null, date: null, slot: 26, playing: false, speed: 1, timer: null, source: "", view: "map",
   sc: { crowd: 0, service: 0, eventSlot: 44, eventSize: 0 },
 };
 let radar = null;
@@ -354,7 +354,29 @@ function renderBanner() {
 function renderAll() {
   if (!state.day) return;
   renderClock(); renderPressure(); renderSignature(); renderCatchment();
-  renderAction(); renderRadar(); renderReady(); renderBanner();
+  renderAction(); renderHero(); renderReady(); renderBanner();
+}
+
+/** The hero slot is either the radar chart or the map; both read the same scenario-aware maths. */
+function renderHero() {
+  if (!state.day) return;
+  if (state.view === "map") { if (window.FlowGuardMap) window.FlowGuardMap.render(window.FG); }
+  else renderRadar();
+}
+
+function applyView(v) {
+  state.view = v === "radar" ? "radar" : "map";
+  const isMap = state.view === "map";
+  $("#chartbox").hidden = isMap;
+  $("#mapWrap").hidden = !isMap;
+  $("#radarLegend").hidden = isMap;
+  $("#mapLegend").hidden = !isMap;
+  document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === state.view));
+  $("#heroSub").textContent = isMap
+    ? "where the crowd goes next · real TransLink routes · click a route to zoom"
+    : "exit wave · index: normal-day peak = 100";
+  if (!isMap && radar) radar.resize();
+  renderHero();
 }
 
 // ---------------------------------------------------------------- data loading
@@ -438,6 +460,7 @@ function syncUrl() {
   u.searchParams.set("poi", state.poi);
   u.searchParams.set("date", state.date);
   u.searchParams.set("t", fmtSlot(state.slot));
+  u.searchParams.set("view", state.view);
   history.replaceState(null, "", u);
 }
 
@@ -496,7 +519,9 @@ function selfTest() {
   }
   const acts = [...Array(48).keys()].filter((t) => actionsAt(t).length).length;
   const srv = [...Array(48).keys()].filter((t) => state.day.group_order.some((g) => state.day.groups[g].rows[t].action)).length;
-  document.body.dataset.selftest = `readiness_mismatch=${bad}/${n} action_slots_client=${acts} action_slots_server=${srv}`;
+  const mapMismatch = state.day.group_order.reduce((n, g) =>
+    n + view(g, state.slot).filter((x, k) => (x.ready ?? null) !== (state.day.groups[g].rows[state.slot].ready[k] ?? null)).length, 0);
+  document.body.dataset.selftest = `readiness_mismatch=${bad}/${n} action_slots_client=${acts} action_slots_server=${srv} map_mismatch=${mapMismatch}`;
 }
 
 // ---------------------------------------------------------------- genie
@@ -672,6 +697,7 @@ function wire() {
   });
   $("#scrub").addEventListener("input", (e) => setSlot(Number(e.target.value)));
   $("#themeBtn").addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+  document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { applyView(b.dataset.view); syncUrl(); }));
   $("#labBtn").addEventListener("click", () => openDrawer("lab", $("#lab").hidden));
   $("#askBtn").addEventListener("click", () => openDrawer("ask", $("#ask").hidden));
   $("#briefBtn").addEventListener("click", openBriefing);
@@ -738,6 +764,7 @@ async function loadPoi(key, wantDate) {
 async function init() {
   const params = new URLSearchParams(location.search);
   applyTheme(params.get("theme") || store.get("fg-theme") || "dark");
+  applyView(params.get("view") || "map");
   wire();
   syncLab();
   try {
@@ -753,5 +780,7 @@ async function init() {
   if (params.get("selftest") === "1" && state.day) selfTest();
   getJSON("/api/genie/info").then((g) => { $("#askBtn").hidden = !g.configured; }).catch(() => {});
 }
+
+window.FG = { state, view, actionsAt, HORIZONS, SLOT_MIN, fmtSlot, fmtMin, pct, x2, esc, css, chip, STATUS, ICONS, SEVERE, renderAll };
 
 init();

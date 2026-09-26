@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FlowGuard · Park Royal</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M7 20c4 0 5-8 9-8s5 8 9 8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/vendor/leaflet.css">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -89,16 +90,32 @@
 
       <article class="card" id="radarCard">
         <div class="card-head">
-          <h2>Transit pressure radar <span class="h2-sub">exit wave, index: normal-day peak = 100</span></h2>
-          <ul class="legend" id="radarLegend">
-            <li class="hist-only"><span class="sw sw-actual"></span>Actual exits</li>
-            <li class="outlook-only"><span class="sw sw-expected"></span>Expected exits (outlook)</li>
-            <li><span class="sw sw-forecast"></span>Forecast from now</li>
-            <li class="hist-only"><span class="sw sw-earlier"></span>Forecast made 60 min earlier</li>
-            <li><span class="sw sw-usual"></span>Normal day</li>
-          </ul>
+          <h2>Transit pressure <span class="h2-sub" id="heroSub">exit wave · index: normal-day peak = 100</span></h2>
+          <div class="head-tools">
+            <ul class="legend" id="radarLegend">
+              <li class="hist-only"><span class="sw sw-actual"></span>Actual exits</li>
+              <li class="outlook-only"><span class="sw sw-expected"></span>Expected exits (outlook)</li>
+              <li><span class="sw sw-forecast"></span>Forecast from now</li>
+              <li class="hist-only"><span class="sw sw-earlier"></span>Forecast made 60 min earlier</li>
+              <li><span class="sw sw-usual"></span>Normal day</li>
+            </ul>
+            <ul class="legend" id="mapLegend" hidden>
+              <li class="hist-only"><span class="sw sw-actual"></span>Actual</li>
+              <li><span class="sw sw-forecast"></span>Forecast</li>
+              <li><span class="sw sw-usual"></span>Normal</li>
+            </ul>
+            <div class="viewtoggle" role="group" aria-label="Radar chart or map">
+              <button class="btn small" data-view="radar">Radar</button>
+              <button class="btn small" data-view="map">Map</button>
+            </div>
+          </div>
         </div>
-        <div class="chartbox"><canvas id="radar" aria-label="Exit wave chart"></canvas></div>
+        <div class="chartbox" id="chartbox"><canvas id="radar" aria-label="Exit wave chart"></canvas></div>
+        <div id="mapWrap" hidden>
+          <div class="mapbox" id="mapbox"></div>
+          <div class="map-key" id="mapKey"></div>
+          <div class="map-bands" id="mapBands" aria-label="Exit wave per route group, next two hours"></div>
+        </div>
       </article>
 
       <article class="card" id="readyCard">
@@ -166,6 +183,8 @@
   </aside>
 
   <script src="/static/vendor/chart.umd.min.js"></script>
+  <script src="/static/vendor/leaflet.js"></script>
+  <script src="/static/map.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

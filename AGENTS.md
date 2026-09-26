@@ -23,12 +23,15 @@ directly. Every table carries a `poi` column. To add a POI, edit `pois.json` and
 
 ```
 flowguard/
-  pipeline/   Databricks notebooks 00–07, 90 (".py" files starting with "# Databricks notebook source")
+  pipeline/   Databricks notebooks 00–08, 90 (".py" files starting with "# Databricks notebook source")
               fg_settings.py  every threshold and constant (plain Python)
               fg_core.py      every formula (plain pandas/numpy)
   config/     CSVs loaded into bronze.ref_* (origin→corridor, route-group overrides, holidays)
-  app/        Databricks App: app.py + server/ (FastAPI) + static/ (vanilla JS, Chart.js vendored)
-  local/      run_local.py (all gold tables locally), build_snapshot.py (app offline JSON)
+  app/        Databricks App: app.py + server/ (FastAPI) + static/ (vanilla JS, Chart.js + Leaflet vendored)
+              static/map.js  Leaflet corridor map: real GTFS routes, end labels, flow dots + per-route exit-wave cards
+              static/data/<poi>/map.json  committed map geometry per POI (route polylines, corridor ends, waypoints, land)
+  local/      run_local.py (all gold tables locally), build_snapshot.py (app offline JSON),
+              build_map_geometry.py (local GTFS shapes → app/static/data/<poi>/map.json for every POI)
               local/data/ is gitignored: raw GTFS, local gold CSVs
   deploy/     app.json (app + warehouse resource), job.json (flowguard-refresh job)
   docs/       spec, verified findings
@@ -41,7 +44,9 @@ flowguard/
    slots, then call `fg_core` once per POI.
    `local/run_local.py` calls the same functions. Never re-implement a formula inside a notebook.
 2. **The browser mirrors `fg_core`.** `app/static/app.js` (`view`, `actionsAt`) rescales the server's gap for
-   scenarios and re-implements the readiness/action logic so the Scenario Lab can recompute instantly. `app/server/logic.py` holds copies of the
+   scenarios and re-implements the readiness/action logic so the Scenario Lab can recompute instantly;
+   `app/static/map.js` consumes that same `view()` (exported as `window.FG`), so the map can never disagree with
+   the readiness table. `app/server/logic.py` holds copies of the
    thresholds. If you change readiness or action logic in `fg_core`/`fg_settings`, update both, then run the
    self-test (see Verification).
 3. **Timestamps are Vancouver local clock time**, despite the `Z` suffix in the raw data. They are stored as
@@ -55,6 +60,15 @@ flowguard/
    in the notebook, `SLOT_COLS`/`TIMELINE_COLS` in `app/server/logic.py`, and rebuild the snapshot.
    In live mode, a missing column makes the app silently fall back to the snapshot. Check `/api/health`
    → `last_source`.
+
+7. **The map geometry is a committed static asset.** `app/static/data/<poi>/map.json` is generated for every POI in
+   `pois.json` by `local/build_map_geometry.py` from GTFS `shapes.txt`. Departing trips and route groups come from
+   `fg_core.poi_departures` (the same call as `06_gtfs_service`, including `route_group_overrides.csv`), so the map's
+   lines match the readiness groups. Per-POI draw radius and waypoint labels live in the script's `MAP` dict. Re-run
+   the script and commit the `map.json` files if a POI, its rules or the GTFS feed change. `build_snapshot.py` only
+   clears `<poi>/day/`, so it leaves `map.json` alone. The map is Leaflet (vendored) over keyless Esri canvas basemap
+   tiles (attribution kept visible); overlays come only from `map.json`, so offline it falls back to the committed land
+   silhouette. No API keys in the frontend (CARTO basemaps watermark tiles without a key, so don't switch to them).
 
 ## Deliberate deviations from the spec (keep unless the data changes)
 
@@ -107,6 +121,8 @@ flowguard/
 python flowguard/local/run_local.py
 # refresh the app's offline snapshot from those tables
 python flowguard/local/build_snapshot.py
+# regenerate the map geometry from local GTFS (only when route-group rules or the GTFS feed change)
+python flowguard/local/build_map_geometry.py
 # run the app offline (venv lives in flowguard/app/.venv, gitignored)
 cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app --port 8765
 ```
@@ -114,9 +130,12 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
 - **Client/server consistency:** open `/?date=2025-12-26&selftest=1` and read `body[data-selftest]`, which should
   show `readiness_mismatch=0/576` (a single 23:30 cross-midnight mismatch on Saturdays is a known edge).
   Headless: `chrome --headless=new --virtual-time-budget=8000 --dump-dom "<url>"`.
+- **Map view:** the hero card toggles `Map | Radar` (default map; `?view=radar` for the chart). The self-test also
+  reports `map_mismatch=0`. Check every POI, one outlook date, and a location switch in the page (layers, end
+  labels, cards and the KPI card must all change). The after-hours band is drawn on the radar view.
 - **Visual check:** after UI changes, take screenshots with
   `chrome --headless=new --window-size=1440,1250 --screenshot=out.png "<url>&theme=dark"`, and repeat with
-  `theme=light` and a 1280 width. The URL params are `poi`, `date`, `t=HH:MM`, `theme`, and `lab=1` (opens
+  `theme=light` and a 1280 width. The URL params are `poi`, `date`, `t=HH:MM`, `theme`, `view=map|radar`, and `lab=1` (opens
   the Scenario Lab). Run the self-test for every POI (`?poi=ubc&date=…&selftest=1`).
 - **Expected numbers** (`run_local.py` prints all of these):
   - Park Royal backtest R²: egress 0.97 / 0.96 / 0.95 / 0.94 vs typical week 0.64. Boxing Day: first eastbound
@@ -135,17 +154,19 @@ cd flowguard/app && DATA_MODE=snapshot .venv/Scripts/python -m uvicorn app:app -
 - The frontend has no build step. Colours are CSS tokens in `styles.css`, with light and dark each defined
   separately. Status colours (good / warning / serious / critical) are only for readiness and pressure levels,
   always paired with an icon and a label.
+- Map encoding: colour = worst readiness in the next 2 h, width = next-30-min exit demand, moving dots = direction of
+  travel (speed ∝ demand), hub ring = on-site pressure; animations stop under `prefers-reduced-motion`. Tile fade is
+  off (`fadeAnimation: false`) so headless captures aren't starved by the flow animation; judge the map in captures
+  without `--disable-gpu` (it can show a faint seam). `.mapbox` uses `isolation: isolate` so Leaflet's z-indexes
+  (400–1000) stay under the sticky header and drawers.
 - Commit messages end with a `Co-Authored-By` line when an agent writes the commit. Never push, deploy, or run
   Databricks jobs without the human asking.
 
 ## Status and next steps
 
-Done: pipeline 01–07, egress model with MLflow, GTFS service, readiness timeline, app (live + snapshot),
-deploy and job configs.
-Pipeline and app are multi-POI (Park Royal, UBC, Waterfront): the app has a location switcher, every endpoint takes
-`?poi=`, and the snapshot lives in `app/static/data/<poi>/`.
+Done: pipeline 01–08 (egress model with MLflow, GTFS service, readiness timeline, future-date outlook, after-hours
+watch), app (live + snapshot) with location switcher, Map | Radar hero, Scenario Lab, operator briefing and Ask
+FlowGuard connected to the Genie space in `app/app.yaml`; deploy and job configs in `flowguard/deploy/`.
 Next:
 - redeploy the app after each app change (`databricks apps deploy …`, see README)
-- Genie space ("Ask FlowGuard" drawer is wired; set `GENIE_SPACE_ID` in `app/app.yaml` and in `90_app_grants`)
 - pitch script (`docs/pitch_script.md`) built from `data_findings.md`
-- stretch: after-hours watch (security theme)
