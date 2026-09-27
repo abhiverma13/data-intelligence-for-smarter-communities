@@ -29,7 +29,7 @@ const STATUS = {
 const state = {
   pois: [], poi: null, days: null, model: null, day: null, date: null, slot: 26, playing: false, speed: 1, timer: null, source: "", view: "map",
   sc: { crowd: 0, service: 0, eventSlot: 44, eventSize: 0 },
-  openAlso: new Set(),  // secondary action rows the user has expanded (kept open while the clock plays)
+  actSel: null,  // route group the user picked on the action card (null = the most urgent one)
 };
 let radar = null;
 
@@ -188,12 +188,13 @@ function renderAction() {
       <p class="action-why">Expected exit demand per unit of scheduled service is within the normal range for the ${esc(d.service_label)} schedule. No action needed.</p>`;
     return;
   }
-  const a = acts[0], G = d.groups[a.g];
+  // the picked group gets the full card; every other flagged group is a row that can be clicked to open it
+  if (!acts.some((x) => x.g === state.actSel)) state.actSel = null;
+  const a = acts.find((x) => x.g === state.actSel) ?? acts[0], G = d.groups[a.g];
   card.style.setProperty("--st", css(a.worst === "Critical" ? "--critical" : "--serious"));
-  const also = acts.slice(1).map((x) => `<details class="also-item" data-g="${esc(x.g)}"${state.openAlso.has(x.g) ? " open" : ""}>
-    <summary class="also-row">${chip(x.worst)}
-      <span><b>${esc(d.groups[x.g].label)}</b> ${fmtSlot(x.start)}–${fmtSlot(x.end)} · in ${x.lead} min · ${x.peak.toFixed(1)}× normal load</span></summary>
-    <ul class="levers">${d.groups[x.g].levers.map((l) => `<li>${esc(l.replace("{start}", x.stage))}</li>`).join("")}</ul></details>`).join("");
+  const also = acts.filter((x) => x !== a).map((x) => `<button type="button" class="also-row" data-g="${esc(x.g)}"
+    title="Show the suggested actions for ${esc(d.groups[x.g].label)}">${chip(x.worst)}
+    <span><b>${esc(d.groups[x.g].label)}</b> ${fmtSlot(x.start)}–${fmtSlot(x.end)} · in ${x.lead} min · ${x.peak.toFixed(1)}× normal load</span></button>`).join("");
   card.innerHTML = `
     <div class="action-top">${chip(a.worst)}
       <div class="action-title">${esc(G.label)} ${a.worst.toLowerCase()} ${fmtSlot(a.start)}–${fmtSlot(a.end)}${tag}</div>
@@ -201,8 +202,8 @@ function renderAction() {
     <p class="action-why">Expected ${esc(G.label.toLowerCase())} exit demand per unit of scheduled service is <b>${a.peak.toFixed(1)}×</b> a normal ${esc(d.service_label)}, on the ${esc(d.service_label)} schedule (${esc(G.routes)}).</p>
     <ul class="levers">${G.levers.map((l) => `<li>${esc(l.replace("{start}", a.stage))}</li>`).join("")}</ul>
     ${also ? `<div class="also">${also}</div>` : ""}`;
-  card.querySelectorAll("details.also-item").forEach((el) =>
-    el.addEventListener("toggle", () => state.openAlso[el.open ? "add" : "delete"](el.dataset.g)));
+  card.querySelectorAll("button.also-row").forEach((el) =>
+    el.addEventListener("click", () => { state.actSel = el.dataset.g; renderAction(); }));
 }
 
 function radarData() {
@@ -423,7 +424,7 @@ async function loadDay(date) {
   showLoader(`Loading ${poiName()} · ${fmtDate(date)}…`);
   try {
     const day = await getJSON(`/api/day?poi=${state.poi}&date=${date}`);
-    state.day = day; state.date = date; state.source = day.source;
+    state.day = day; state.date = date; state.source = day.source; state.actSel = null;
     $("#day").value = date;
     renderOutlook();
     $("#banner").classList.remove("error");
