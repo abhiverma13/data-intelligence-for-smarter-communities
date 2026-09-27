@@ -14,13 +14,13 @@
       "corridors": [
         {"key": "NS_WEST", "label": "West Vancouver"},
         {"key": "NS_EAST", "label": "North Vancouver"},
-        {"key": "EAST", "label": "East via R2"},
-        {"key": "SOUTH", "label": "South via Lions Gate"},
+        {"key": "EAST", "label": "Burnaby & east"},
+        {"key": "SOUTH", "label": "Vancouver & Richmond"},
         {"key": "BC_OTHER", "label": "Rest of BC"},
         {"key": "OUT_OF_REGION", "label": "Out of province"}
       ],
       "local_corridors": ["NS_WEST", "NS_EAST"],
-      "catchment_kpi": "of arrivals must leave the North Shore",
+      "catchment_kpi": "home area outside the North Shore",
       "regional_corridors": ["SOUTH", "EAST", "BC_OTHER"],
       "groups": [
         {"key": "EASTBOUND", "label": "Eastbound", "routes": "R2 · 255", "corridors": ["EAST", "NS_EAST"],
@@ -66,13 +66,13 @@
       "corridors": [
         {"key": "CAMPUS", "label": "UBC campus"},
         {"key": "DOWNTOWN_NS", "label": "Downtown & N. Shore"},
-        {"key": "EAST", "label": "East via Broadway"},
-        {"key": "SOUTH", "label": "South via 41st/49th"},
+        {"key": "EAST", "label": "East of campus"},
+        {"key": "SOUTH", "label": "South Van & Richmond"},
         {"key": "BC_OTHER", "label": "Rest of BC"},
         {"key": "OUT_OF_REGION", "label": "Out of province"}
       ],
       "local_corridors": ["CAMPUS"],
-      "catchment_kpi": "of arrivals live off campus",
+      "catchment_kpi": "home area off campus",
       "regional_corridors": ["DOWNTOWN_NS", "EAST", "SOUTH", "BC_OTHER"],
       "groups": [
         {"key": "BROADWAY_EAST", "label": "Broadway east", "routes": "99 · 84 · 25 · 33 · 9", "corridors": ["EAST"],
@@ -118,15 +118,15 @@
       "hub": "Waterfront Station",
       "corridors": [
         {"key": "DOWNTOWN", "label": "Downtown/West End"},
-        {"key": "NORTH_SHORE", "label": "North Shore (SeaBus)"},
-        {"key": "EAST", "label": "East via Expo/WCE"},
-        {"key": "SOUTH", "label": "South via Canada Line"},
-        {"key": "WEST", "label": "West to Kits / UBC"},
+        {"key": "NORTH_SHORE", "label": "North Shore"},
+        {"key": "EAST", "label": "Burnaby & east"},
+        {"key": "SOUTH", "label": "South Van & Richmond"},
+        {"key": "WEST", "label": "Kits & UBC"},
         {"key": "BC_OTHER", "label": "Rest of BC"},
         {"key": "OUT_OF_REGION", "label": "Out of province"}
       ],
       "local_corridors": ["DOWNTOWN"],
-      "catchment_kpi": "of arrivals live outside downtown",
+      "catchment_kpi": "home area outside downtown",
       "regional_corridors": ["NORTH_SHORE", "EAST", "SOUTH", "WEST", "BC_OTHER"],
       "groups": [
         {"key": "NORTH_SHORE", "label": "North Shore", "routes": "SeaBus", "corridors": ["NORTH_SHORE"],

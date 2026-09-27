@@ -146,19 +146,26 @@ function renderPressure() {
 }
 
 function renderSignature() {
-  const s = state.day.slots[state.slot];
+  const d = state.day, s = d.slots[state.slot];
   $("#sigLabel").textContent = s.signature || "–";
-  const pp = s.regional != null && s.regional_base != null ? Math.round((s.regional - s.regional_base) * 100) : null;
+  // expected exits in the next hour (+30 and +60 min, scenario included), split across the route groups
+  const dem = d.group_order.map((g) => {
+    const v = view(g, state.slot);
+    return [g, (v[0].dem ?? 0) + (v[1].dem ?? 0)];
+  });
+  const tot = dem.reduce((a, [, x]) => a + x, 0);
+  const tip = "Of the exits expected in the next hour, the share estimated to load each group of routes (from the crowd's home-area mix)";
   $("#sigInd").innerHTML = `
-    <li title="Share of the last 2 h of arrivals from the South, East and rest-of-BC corridors"><span>Regional share</span><b>${pct(s.regional)} <small>${pp == null ? "" : `(${pp >= 0 ? "+" : "−"}${Math.abs(pp)} pp)`}</small></b></li>
-    <li><span>Stay length vs normal</span><b>${x2(s.stay)}</b></li>
-    <li><span>Out-of-province share vs normal</span><b>${x2(s.visitor)}</b></li>`;
+    <li title="How long people who arrived in the last 2 hours are staying, compared with normal for this time"><span>Stay length vs normal</span><b>${x2(s.stay)}</b></li>
+    <li class="ind-head" title="${tip}">Expected transit exits, next hour</li>
+    ${dem.map(([g, x]) => `<li title="${tip}"><span>${esc(d.groups[g].label)}</span><b>${tot > 0 ? pct(x / tot) : "–"}</b></li>`).join("")}`;
 }
 
 function renderCatchment() {
   const d = state.day, s = d.slots[state.slot];
   $("#offNS").innerHTML = s.local == null ? "" :
-    `<b>${pct(1 - s.local)}</b> ${esc(d.poi.catchment_kpi)} <span>(normal ${pct(1 - s.local_base)})</span>`;
+    `<b>${pct(1 - s.local)}</b> of recent arrivals are non-local <span>(normal ${pct(1 - s.local_base)})</span>
+       <div class="kpi-note">Non-local = ${esc(d.poi.catchment_kpi)}</div>`;
   const max = Math.max(0.2, ...d.corridors.flatMap((c) => [s.shares[c.key] ?? 0, s.base_shares[c.key] ?? 0])) * 1.1;
   $("#catch").innerHTML = d.corridors.map((c) => {
     const v = s.shares[c.key], b = s.base_shares[c.key];
