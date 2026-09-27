@@ -236,6 +236,13 @@ body.outlook .legend .hist-only, body:not(.outlook) .legend .outlook-only { disp
 .levers { margin: 8px 0 0; padding-left: 22px; font-size: 17px; display: grid; gap: 4px; }
 .also { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); display: grid; gap: 6px; font-size: 15px; color: var(--ink-2); }
 .also-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.also-item > summary { cursor: pointer; list-style: none; border-radius: 6px; padding: 2px 4px; margin: 0 -4px; }
+.also-item > summary::-webkit-details-marker { display: none; }
+.also-item > summary::after { content: "▸ actions"; margin-left: auto; font-size: 13px; color: var(--muted); }
+.also-item[open] > summary::after { content: "▾ hide"; }
+.also-item > summary:hover { background: var(--surface-2, rgba(127, 127, 127, 0.08)); }
+.also-item > summary:focus-visible { outline: 2px solid var(--accent, currentColor); outline-offset: 2px; }
+.also-item .levers { margin: 4px 0 4px; font-size: 15px; }
 
 /* ---------- radar ---------- */
 .legend { list-style: none; margin: 0; padding: 0; display: flex; gap: 14px; flex-wrap: wrap; font-size: 14px; color: var(--ink-2); }
