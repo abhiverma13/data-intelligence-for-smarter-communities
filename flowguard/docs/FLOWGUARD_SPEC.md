@@ -1,5 +1,11 @@
 # FlowGuard — Build Spec & Implementation Brief
 
+> **Status: original design brief, written before the build.** The project has since grown beyond it: three
+> locations (Park Royal, UBC, Waterfront), an after-hours watch, future-date outlooks, a map view, an operator
+> briefing and a Genie chat. Its §4.3 numbers came from a truncated sample and several thresholds and table names
+> changed. For what was actually built and the verified numbers, see [../README.md](../README.md) and
+> [data_findings.md](data_findings.md).
+
 **Hackathon:** Data Intelligence for Smarter Communities (Rogers × Databricks × UBC), Sept 25–27 2026
 **Theme:** Transit (primary) + Security (secondary)
 **Location of focus:** Park Royal Shopping Centre, West Vancouver (one point of interest)
