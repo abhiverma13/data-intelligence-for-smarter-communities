@@ -34,7 +34,7 @@ flowguard/
               build_map_geometry.py (local GTFS shapes → app/static/data/<poi>/map.json for every POI)
               local/data/ is gitignored: raw GTFS, local gold CSVs
   deploy/     app.json (app + warehouse resource), job.json (flowguard-refresh job)
-  docs/       spec, verified findings
+  docs/       verified findings, Genie space setup, original design brief
 ```
 
 ## Invariants: do not break these
@@ -103,8 +103,9 @@ flowguard/
 
 - The human runs `git push`. Databricks pulls through a **Git folder**, where the human clicks Pull. Code is
   never edited in the Databricks UI.
-- Notebooks run on **serverless**. "Run all" is fine because this is a solo project. Order: 01 → 02 → 03 → 04 → 05,
-  and 06 (after 02) → 07. The job in `deploy/job.json` encodes this graph.
+- Notebooks run on **serverless**; rebuild with the Job (`databricks jobs run-now 744392775638066`). Order: 01 → 02 → 03
+  → 04 → 05, and 06 (after 02), then 07 → 08. `deploy/job.json` encodes this graph; apply edits to the existing Job
+  with `deploy/job_reset.json`.
 - Databricks CLI profile: `flowguard`. The SQL warehouse ID is in `deploy/app.json`. The Git folder path is in
   `deploy/job.json`.
 - Free Edition limits:
@@ -173,4 +174,3 @@ watch), app (live + snapshot) with location switcher, Map | Radar hero, Scenario
 FlowGuard connected to the Genie space in `app/app.yaml`; deploy and job configs in `flowguard/deploy/`.
 Next:
 - redeploy the app after each app change (`databricks apps deploy …`, see README)
-- pitch script (`docs/pitch_script.md`) built from `data_findings.md`
